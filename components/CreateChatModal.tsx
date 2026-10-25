@@ -5,27 +5,41 @@ import { createClient } from '@/lib/supabase/client'
 export default function CreateChatModal({ currentUser, onClose, onCreated }: { currentUser: any, onClose: () => void, onCreated: (chat: any) => void }) {
   const [name, setName] = useState('')
   const [type, setType] = useState<'group' | 'channel'>('group')
+  const [loading, setLoading] = useState(false)
   const supabase = createClient()
 
   const handleCreate = async () => {
     if (!name.trim()) return
+    setLoading(true)
     
-    // Создаем чат в базе
-    const { data: newChat, error } = await supabase.from('chats').insert({
+    // 1. Создаем чат
+    const { data: newChat, error: chatError } = await supabase.from('chats').insert({
       type,
       name,
       avatar_color: '#2aabee'
     }).select().single()
 
-    if (newChat && !error) {
-      // Добавляем создателя в участники
-      await supabase.from('chat_participants').insert({
+    if (chatError) {
+      alert('Ошибка при создании чата: ' + chatError.message)
+      setLoading(false)
+      return
+    }
+
+    // 2. Добавляем себя в участники
+    if (newChat) {
+      const { error: memberError } = await supabase.from('chat_participants').insert({
         chat_id: newChat.id,
         user_id: currentUser.id
       })
-      onCreated(newChat)
-      onClose()
+
+      if (memberError) {
+        alert('Ошибка при добавлении в участники: ' + memberError.message)
+      } else {
+        onCreated(newChat)
+        onClose()
+      }
     }
+    setLoading(false)
   }
 
   return (
@@ -46,8 +60,8 @@ export default function CreateChatModal({ currentUser, onClose, onCreated }: { c
           className="w-full bg-white/50 dark:bg-black/30 border border-white/30 dark:border-white/10 rounded-xl px-4 py-3 mb-4 outline-none text-black dark:text-white" 
         />
 
-        <button onClick={handleCreate} className="w-full bg-blue-500 text-white rounded-xl py-3 font-semibold hover:bg-blue-600 transition">
-          Создать
+        <button onClick={handleCreate} disabled={loading} className="w-full bg-blue-500 text-white rounded-xl py-3 font-semibold hover:bg-blue-600 transition disabled:opacity-50">
+          {loading ? 'Создание...' : 'Создать'}
         </button>
       </div>
     </div>
