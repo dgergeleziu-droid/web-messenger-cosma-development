@@ -16,27 +16,23 @@ export default function GiftModal({ currentUser, chatId, onClose, onGiftSent }: 
   const supabase = createClient()
 
   const sendGift = async (gift: any) => {
-    if ((currentUser.stars || 0) < gift.price) {
-      alert('Недостаточно звезд! Купите их в профиле.')
-      return
-    }
-
     setLoading(true)
-
-    // 1. Списываем звезды у текущего пользователя
-    await supabase.from('profiles').update({ stars: currentUser.stars - gift.price }).eq('id', currentUser.id)
-
-    // 2. Отправляем подарок как специальное сообщение
-    await supabase.from('messages').insert({
-      chat_id: chatId,
-      sender_id: currentUser.id,
-      text: `Подарил ${gift.name}`,
-      gift: gift.emoji
+    
+    // Вызываем нашу защищенную функцию в базе данных
+    const { error } = await supabase.rpc('send_gift', {
+      p_chat_id: chatId,
+      p_gift: gift.emoji,
+      p_price: gift.price,
+      p_text: `Подарил ${gift.name}`
     })
 
+    if (error) {
+      alert(error.message) // Если звезд не хватает, выскочит "Недостаточно звезд!"
+    } else {
+      onGiftSent()
+      onClose()
+    }
     setLoading(false)
-    onGiftSent()
-    onClose()
   }
 
   return (
@@ -52,12 +48,8 @@ export default function GiftModal({ currentUser, chatId, onClose, onGiftSent }: 
 
         <div className="grid grid-cols-3 gap-3">
           {GIFTS.map(gift => (
-            <button 
-              key={gift.id} 
-              onClick={() => sendGift(gift)} 
-              disabled={loading}
-              className="flex flex-col items-center justify-center p-4 bg-white/50 dark:bg-black/30 rounded-2xl border border-white/30 dark:border-white/10 hover:bg-white/80 dark:hover:bg-black/50 transition cursor-pointer"
-            >
+            <button key={gift.id} onClick={() => sendGift(gift)} disabled={loading}
+              className="flex flex-col items-center justify-center p-4 bg-white/50 dark:bg-black/30 rounded-2xl border border-white/30 dark:border-white/10 hover:bg-white/80 dark:hover:bg-black/50 transition cursor-pointer">
               <span className="text-4xl mb-2">{gift.emoji}</span>
               <span className="text-xs font-semibold text-black dark:text-white mb-1">{gift.name}</span>
               <span className="text-xs font-bold text-yellow-600 dark:text-yellow-500 flex items-center gap-1">⭐ {gift.price}</span>
