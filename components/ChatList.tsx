@@ -1,15 +1,34 @@
-import { Chat } from "../app/page";
+'use client'
+
+import { useState } from 'react'
+import { Chat } from "../app/page"
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 
 export default function ChatList({ chats, activeId, onSelect }: { chats: Chat[], activeId: string | null, onSelect: (c: Chat) => void }) {
+  const supabase = createClient()
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/auth/login')
+    router.refresh()
+  }
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-[#17212b]">
-      {/* Шапка с поиском */}
-      <div className="p-3 flex items-center gap-3 border-b border-gray-200 dark:border-[#242f3d]">
+      {/* Шапка с поиском и кнопкой выхода */}
+      <div className="p-3 flex items-center gap-2 border-b border-gray-200 dark:border-[#242f3d]">
         <button className="p-2 hover:bg-gray-100 dark:hover:bg-[#242f3d] rounded-full text-xl">☰</button>
+        
         <div className="flex-1 relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input type="text" placeholder="Поиск" className="w-full bg-gray-100 dark:bg-[#242f3d] rounded-full py-2 pl-9 pr-4 text-sm outline-none" />
         </div>
+
+        <button onClick={handleLogout} className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded-full text-xl" title="Выйти">
+          🚪
+        </button>
       </div>
 
       {/* Список чатов */}
@@ -25,7 +44,7 @@ export default function ChatList({ chats, activeId, onSelect }: { chats: Chat[],
             {/* Текст */}
             <div className="flex-1 min-w-0">
               <div className="flex justify-between items-baseline mb-0.5">
-                <span className="font-semibold truncate">{chat.name}</span>
+                <span className="font-semibold truncate text-black dark:text-white">{chat.name}</span>
                 <span className="text-xs text-gray-500 shrink-0">{chat.time}</span>
               </div>
               <div className="flex justify-between items-center">
