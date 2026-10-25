@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
-export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, onOpenCreateChat }: any) {
+export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, onOpenCreateChat, onOpenAdmin }: any) {
   const supabase = createClient()
   const router = useRouter()
   const [isDark, setIsDark] = useState(false)
@@ -23,14 +23,17 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
         
         <div className="p-5 bg-gradient-to-b from-blue-500/20 to-transparent dark:from-blue-900/30 cursor-pointer hover:bg-black/5 transition" onClick={onOpenSettings}>
           <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold mb-3 shadow-md text-white overflow-hidden" style={{ backgroundColor: user?.avatar_color }}>
-            {user?.avatar_url ? (
-              <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
-            ) : (
-              user?.name?.[0]?.toUpperCase()
-            )}
+            {user?.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : user?.name?.[0]?.toUpperCase()}
           </div>
-          <div className="font-bold text-lg text-black dark:text-white">{user?.name}</div>
+          <div className="font-bold text-lg text-black dark:text-white flex items-center gap-1">
+            {user?.name} {user?.status_emoji && <span>{user.status_emoji}</span>}
+          </div>
           <div className="text-sm text-gray-600 dark:text-gray-400">{user?.username ? `@${user.username}` : 'Нажмите, чтобы настроить'}</div>
+          
+          <div className="mt-2 flex items-center gap-2">
+            {user?.is_premium && <span className="text-xs bg-purple-500/20 text-purple-600 px-2 py-0.5 rounded-full font-bold">💎 Premium</span>}
+            <span className="text-xs bg-yellow-500/20 text-yellow-600 px-2 py-0.5 rounded-full font-bold">⭐ {user?.stars || 0}</span>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto py-2">
@@ -45,6 +48,14 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
           </div>
 
           <div className="h-px bg-black/5 dark:bg-white/10 mx-4 my-1" />
+
+          {/* КНОПКА АДМИНКИ (показывается только админам) */}
+          {user?.is_admin && (
+            <button onClick={() => { onClose(); onOpenAdmin(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-red-500/10 text-left">
+              <span className="text-xl">👑</span>
+              <span className="text-[15px] font-bold text-red-500">Админ-панель</span>
+            </button>
+          )}
 
           <button onClick={() => { onClose(); onOpenCreateChat(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left">
             <span className="text-xl">👥</span>
