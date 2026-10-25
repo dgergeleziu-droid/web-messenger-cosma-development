@@ -1,47 +1,45 @@
-export default function Page() {
+"use client";
+import { useState } from "react";
+import ChatList from "../components/ChatList";
+import ChatView from "../components/ChatView";
+
+export type Message = { id: string; text: string; senderId: string; time: string; status: "sent"|"read" };
+export type Chat = { id: string; name: string; avatar: string; lastMsg: string; time: string; unread: number; online: boolean; messages: Message[] };
+
+const MOCK_CHATS: Chat[] = [
+  { id: "1", name: "Алиса", avatar: "#E17076", lastMsg: "Привет! Как дела?", time: "12:30", unread: 2, online: true, 
+    messages: [
+      { id: "m1", text: "Привет! Это Cosma 🚀", senderId: "1", time: "12:20", status: "read" },
+      { id: "m2", text: "Круто выглядит!", senderId: "me", time: "12:22", status: "read" },
+      { id: "m3", text: "Привет! Как дела?", senderId: "1", time: "12:30", status: "read" }
+    ] 
+  },
+  { id: "2", name: "Сохранённое", avatar: "#2aabee", lastMsg: "Заметки: купить молоко", time: "Вчера", unread: 0, online: false, 
+    messages: [{ id: "m4", text: "Заметки: купить молоко", senderId: "me", time: "Вчера", status: "read" }] 
+  }
+];
+
+export default function Home() {
+  const [activeChat, setActiveChat] = useState<Chat | null>(null);
+
   return (
-    <main
-      style={{
-        colorScheme: 'light dark',
-        position: 'relative',
-        display: 'flex',
-        minHeight: '100vh',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'light-dark(#fff, #000)',
-        color: 'light-dark(#000, #fff)',
-      }}
-    >
-      <svg
-        aria-hidden="true"
-        style={{ width: 80, height: 80 }}
-        width={80}
-        height={80}
-        fill="none"
-        viewBox="0 0 20 20"
-        xmlns="http://www.w3.org/2000/svg"
-        stroke="currentColor"
-        strokeWidth="0.5"
-      >
-        <path
-          d="M14.2 14.2H17V6.9375C17 4.76288 15.2371 3 13.0625 3H5.8V5.8M14.2 14.2V7.79063L7.79062 14.2H14.2ZM14.2 14.2V17H6.9375C4.76288 17 3 15.2371 3 13.0625V5.8H5.8M5.8 5.8V12.2313L12.2313 5.8H5.8Z"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <p
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: 'calc(50% + 56px)',
-          transform: 'translateX(-50%)',
-          whiteSpace: 'nowrap',
-          fontSize: '14px',
-          fontWeight: 500,
-          color: 'light-dark(#71717a, #a1a1aa)',
-        }}
-      >
-        Your v0 generation will show here.
-      </p>
+    <main className="flex h-screen w-full overflow-hidden bg-white dark:bg-[#0e1621] text-black dark:text-white">
+      {/* Список чатов: на телефоне скрывается, когда открыт чат */}
+      <div className={`w-full md:w-[350px] shrink-0 h-full border-r border-gray-200 dark:border-[#242f3d] ${activeChat ? "hidden md:block" : "block"}`}>
+        <ChatList chats={MOCK_CHATS} activeId={activeChat?.id || null} onSelect={setActiveChat} />
+      </div>
+
+      {/* Окно чата: на телефоне показывается только когда выбран чат */}
+      <div className={`flex-1 h-full ${activeChat ? "block" : "hidden md:flex md:items-center md:justify-center"}`}>
+        {activeChat ? (
+          <ChatView chat={activeChat} onBack={() => setActiveChat(null)} />
+        ) : (
+          <div className="text-center text-gray-500">
+            <h2 className="text-2xl font-semibold mb-2">Cosma</h2>
+            <p>Выберите чат, чтобы начать общение</p>
+          </div>
+        )}
+      </div>
     </main>
-  )
+  );
 }
