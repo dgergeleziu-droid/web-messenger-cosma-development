@@ -31,13 +31,11 @@ export default function Home() {
 
   const handleSelectUser = async (otherUser: any) => {
     setShowNewChat(false);
-    
     const existingChat = chats.find(c => c.name === otherUser.name);
     if (existingChat) {
       setActiveChat(existingChat);
       return;
     }
-
     const newChat: Chat = {
       id: Date.now().toString(),
       name: otherUser.name,
@@ -48,38 +46,45 @@ export default function Home() {
       online: true,
       messages: []
     };
-
     setChats(prev => [newChat, ...prev]);
     setActiveChat(newChat);
   };
 
-  if (!currentUser) return <div className="h-screen flex items-center justify-center bg-[#0e1621] text-white">Загрузка...</div>;
+  if (!currentUser) return <div className="h-screen flex items-center justify-center text-black dark:text-white text-xl font-semibold">Загрузка Cosma...</div>;
 
   return (
-    <main className="flex h-screen w-full overflow-hidden bg-white dark:bg-[#0e1621] text-black dark:text-white relative">
+    <main className="flex h-screen w-full overflow-hidden relative">
+      {/* Задний фон для эффекта стекла */}
+      <div className="absolute inset-0 z-0 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-[#0f172a] dark:to-[#1e1b4b]" />
       
-      <div className={`w-full md:w-[350px] shrink-0 h-full border-r border-gray-200 dark:border-[#242f3d] ${activeChat ? "hidden md:block" : "block"}`}>
-        <ChatList 
-          chats={chats} 
-          activeId={activeChat?.id || null} 
-          onSelect={setActiveChat} 
-          user={currentUser}
-          onOpenProfile={() => setShowProfile(true)}
-          onOpenNewChat={() => setShowNewChat(true)}
-        />
+      <div className="flex h-full w-full max-w-[1600px] mx-auto z-10 p-0 md:p-4 gap-4">
+        
+        {/* Левая панель (Стекло) */}
+        <div className={`w-full md:w-[380px] shrink-0 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/60 dark:bg-[#17212b]/60 ${activeChat ? "hidden md:block" : "block"}`}>
+          <ChatList 
+            chats={chats} 
+            activeId={activeChat?.id || null} 
+            onSelect={setActiveChat} 
+            user={currentUser}
+            onOpenProfile={() => setShowProfile(true)}
+            onOpenNewChat={() => setShowNewChat(true)}
+          />
+        </div>
+
+        {/* Правая панель - Чат (Стекло) */}
+        <div className={`flex-1 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/40 dark:bg-black/20 ${activeChat ? "block" : "hidden md:flex md:items-center md:justify-center"}`}>
+          {activeChat ? (
+            <ChatView chat={activeChat} onBack={() => setActiveChat(null)} />
+          ) : (
+            <div className="text-center text-gray-700 dark:text-gray-300">
+              <h2 className="text-4xl font-bold mb-2 tracking-tight">Cosma</h2>
+              <p>Выберите чат, чтобы начать общение</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className={`flex-1 h-full ${activeChat ? "block" : "hidden md:flex md:items-center md:justify-center"}`}>
-        {activeChat ? (
-          <ChatView chat={activeChat} onBack={() => setActiveChat(null)} />
-        ) : (
-          <div className="text-center text-gray-500">
-            <h2 className="text-2xl font-semibold mb-2">Cosma</h2>
-            <p>Выберите чат или найдите нового собеседника</p>
-          </div>
-        )}
-      </div>
-
+      {/* Модальные окна */}
       {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} />}
       {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
     </main>
