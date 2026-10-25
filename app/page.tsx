@@ -23,21 +23,32 @@ export default function Home() {
   const fetchUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      setCurrentUser(profile || { id: user.id, name: user.email?.split('@')[0], avatar_color: '#2aabee' });
+      // Ищем профиль
+      let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      
+      // ЕСЛИ ПРОФИЛЯ НЕТ (старый аккаунт) - СОЗДАЕМ ЕГО
+      if (!profile) {
+        const { data: newProfile } = await supabase.from('profiles').insert({
+          id: user.id,
+          name: user.email?.split('@')[0] || 'Пользователь',
+          avatar_color: '#2aabee'
+        }).select().single();
+        profile = newProfile;
+      }
+      
+      setCurrentUser(profile || { id: user.id, name: 'Пользователь', avatar_color: '#2aabee' });
     }
   };
 
   const fetchChats = async () => {
     if (!currentUser) return;
-    // Получаем чаты, где состоит текущий пользователь
     const { data: participants } = await supabase
       .from('chat_participants')
       .select('chat_id, chats(*)')
       .eq('user_id', currentUser.id);
       
     if (participants) {
-      const userChats = participants.map((p: any) => p.chats);
+      const userChats = participants.map((p: any) => p.chats).filter(Boolean);
       setChats(userChats);
     }
   };
@@ -45,31 +56,21 @@ export default function Home() {
   useEffect(() => { fetchUser(); }, []);
   useEffect(() => { if(currentUser) fetchChats(); }, [currentUser]);
 
-  // Создание или открытие личного чата
   const handleSelectUser = async (otherUser: any) => {
     setShowNewChat(false);
-    
-    // 1. Ищем, есть ли уже чат с этим человеком
     const existingChat = chats.find(c => c.type === 'private' && c.name === otherUser.name);
-    if (existingChat) {
-      setActiveChat(existingChat);
-      return;
-    }
+    if (existingChat) { setActiveChat(existingChat); return; }
 
-    // 2. Если нет — создаем новый чат в базе
     const { data: newChat, error } = await supabase.from('chats').insert({
-      type: 'private',
-      name: otherUser.name,
-      avatar_color: otherUser.avatar_color || '#2aabee'
+      type: 'private', name: otherUser.name, avatar_color: otherUser.avatar_color || '#2aabee'
     }).select().single();
 
     if (newChat && !error) {
-      // 3. Добавляем участников
       await supabase.from('chat_participants').insert([
         { chat_id: newChat.id, user_id: currentUser.id },
         { chat_id: newChat.id, user_id: otherUser.id }
       ]);
-      fetchChats(); // Обновляем список
+      fetchChats();
       setActiveChat(newChat);
     }
   };
