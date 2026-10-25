@@ -11,22 +11,28 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
   // Загружаем историю сообщений при открытии чата
   useEffect(() => {
     const fetchMessages = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('messages')
         .select('*, profiles(name, avatar_color)')
         .eq('chat_id', chat.id)
         .order('created_at', { ascending: true });
       
       if (data) setMessages(data);
+      if (error) console.error("Ошибка загрузки:", error);
     };
     fetchMessages();
 
-    // Подписываемся на новые сообщения в реальном времени (Realtime)
+    // Подписываемся на новые сообщения (Realtime)
     const channel = supabase.channel(`chat_${chat.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, async (payload) => {
-        // Когда приходит новое сообщение, подгружаем данные отправителя
-        const { data: profile } = await supabase.from('profiles').select('name, avatar_color').eq('id', payload.new.sender_id).single();
-        setMessages(prev => [...prev, { ...payload.new, profiles: profile }]);
+        // Проверяем, нет ли уже этого сообщения (чтобы не было дублей, т.к. мы добавляем его сами)
+        setMessages(prev => {
+          if (prev.find(m => m.id === payload.new.id)) return prev;
+          
+          // Если сообщение пришло от собеседника, подгружаем его профиль
+          // (упрощенно, без ожидания)
+          return [...prev, payload.new];
+        });
       })
       .subscribe();
 
@@ -38,14 +44,36 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
 
   const sendMessage = async () => {
     if (!input.trim()) return;
+    
     const text = input;
-    setInput(""); // Очищаем поле сразу, чтобы было быстро
+    const newMsgId = crypto.randomUUID(); // Генерируем ID на клиенте
+    setInput(""); // Очищаем поле ввода
 
-    await supabase.from('messages').insert({
+    // 1. СРАЗУ показываем сообщение (Оптимистичное обновление)
+    const newMessage = {
+      id: newMsgId,
+      chat_id: chat.id,
+      sender_id: currentUser.id,
+      text: text,
+      created_at: new Date().toISOString(),
+      profiles: { name: currentUser.name, avatar_color: currentUser.avatar_color }
+    };
+    
+    setMessages(prev => [...prev, newMessage]);
+
+    // 2. Отправляем в базу
+    const { error } = await supabase.from('messages').insert({
+      id: newMsgId,
       chat_id: chat.id,
       sender_id: currentUser.id,
       text: text
     });
+
+    // 3. Если ошибка — уведомляем и убираем сообщение с экрана
+    if (error) {
+      alert("Ошибка отправки: " + error.message);
+      setMessages(prev => prev.filter(m => m.id !== newMsgId));
+    }
   };
 
   return (
@@ -64,6 +92,9 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
 
       {/* Сообщения */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+        {messages.length === 0 && (
+           <div className="text-center text-gray-500 mt-10">Напишите первое сообщение...</div>
+        )}
         {messages.map((m) => {
           const isMe = m.sender_id === currentUser.id;
           const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -71,10 +102,14 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
           return (
             <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] md:max-w-[60%] px-4 py-2 rounded-2xl shadow-sm backdrop-blur-md border border-white/20 dark:border-white/10 ${isMe ? 'bg-blue-500/80 text-white rounded-br-sm' : 'bg-white/70 dark:bg-[#182533]/80 text-black dark:text-white rounded-bl-sm'}`}>
-                {/* Имя отправителя (если это группа или канал) */}
+                
+                {/* Имя отправителя (в группах) */}
                 {!isMe && chat.type !== 'private' && (
-                  <div className="text-xs font-bold text-blue-600 dark:text-blue-400 mb-1">{m.profiles?.name}</div>
+                  <div className="text-xs font-bold text-blue-600 dark:text-blue-400 mb-1">
+                    {m.profiles?.name || 'Пользователь'}
+                  </div>
                 )}
+                
                 <div className="text-[15px] leading-snug break-words pb-1">{m.text}</div>
                 <div className={`flex items-center justify-end gap-1 text-[11px] select-none ${isMe ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
                   {time}
@@ -90,9 +125,11 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
       {/* Поле ввода */}
       <div className="p-3 bg-white/40 dark:bg-black/30 border-t border-white/20 dark:border-white/10 backdrop-blur-md flex items-end gap-2 shrink-0">
         <textarea 
-          value={input} onChange={e => setInput(e.target.value)}
+          value={input} 
+          onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-          placeholder="Сообщение" rows={1}
+          placeholder="Сообщение" 
+          rows={1}
           className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[15px] text-black dark:text-white placeholder-gray-500 backdrop-blur-sm"
         />
         <button onClick={sendMessage} className="p-3 rounded-full bg-blue-500 text-white shrink-0 hover:bg-blue-600 transition shadow-lg">
