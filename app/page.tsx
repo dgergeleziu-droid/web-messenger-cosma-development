@@ -85,7 +85,7 @@ export default function Home() {
       </div>
 
       {/* Модальные окна */}
-      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} />}
+      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} />}
       {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
     </main>
   );
