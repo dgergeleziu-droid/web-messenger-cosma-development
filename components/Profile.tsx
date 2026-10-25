@@ -22,8 +22,12 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
       <div className="w-[320px] h-full bg-white/90 dark:bg-[#17212b]/95 backdrop-blur-2xl flex flex-col shadow-2xl border-r border-white/20 dark:border-white/10">
         
         <div className="p-5 bg-gradient-to-b from-blue-500/20 to-transparent dark:from-blue-900/30 cursor-pointer hover:bg-black/5 transition" onClick={onOpenSettings}>
-          <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold mb-3 shadow-md text-white" style={{ backgroundColor: user?.avatar_color }}>
-            {user?.name?.[0]?.toUpperCase()}
+          <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold mb-3 shadow-md text-white overflow-hidden" style={{ backgroundColor: user?.avatar_color }}>
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              user?.name?.[0]?.toUpperCase()
+            )}
           </div>
           <div className="font-bold text-lg text-black dark:text-white">{user?.name}</div>
           <div className="text-sm text-gray-600 dark:text-gray-400">{user?.username ? `@${user.username}` : 'Нажмите, чтобы настроить'}</div>
