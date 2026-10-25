@@ -23,30 +23,29 @@ export default function Home() {
   const fetchUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      // Ищем профиль
       let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      
-      // ЕСЛИ ПРОФИЛЯ НЕТ (старый аккаунт) - СОЗДАЕМ ЕГО
       if (!profile) {
         const { data: newProfile } = await supabase.from('profiles').insert({
-          id: user.id,
-          name: user.email?.split('@')[0] || 'Пользователь',
-          avatar_color: '#2aabee'
+          id: user.id, name: user.email?.split('@')[0] || 'Пользователь', avatar_color: '#2aabee'
         }).select().single();
         profile = newProfile;
       }
-      
       setCurrentUser(profile || { id: user.id, name: 'Пользователь', avatar_color: '#2aabee' });
     }
   };
 
   const fetchChats = async () => {
     if (!currentUser) return;
-    const { data: participants } = await supabase
+    const { data: participants, error } = await supabase
       .from('chat_participants')
       .select('chat_id, chats(*)')
       .eq('user_id', currentUser.id);
       
+    if (error) {
+      console.error("Ошибка загрузки чатов:", error);
+      return;
+    }
+
     if (participants) {
       const userChats = participants.map((p: any) => p.chats).filter(Boolean);
       setChats(userChats);
@@ -72,11 +71,13 @@ export default function Home() {
       ]);
       fetchChats();
       setActiveChat(newChat);
+    } else if (error) {
+      alert("Ошибка при создании личного чата: " + error.message);
     }
   };
 
-  const handleChatCreated = async (newChat: any) => {
-    fetchChats();
+  const handleChatCreated = (newChat: any) => {
+    fetchChats(); // Перезагружаем список из базы
     setActiveChat(newChat);
   };
 
