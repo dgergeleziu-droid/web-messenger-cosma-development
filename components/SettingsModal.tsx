@@ -12,7 +12,6 @@ export default function SettingsModal({ currentUser, onClose, onUpdate }: { curr
   const [error, setError] = useState('')
   const supabase = createClient()
 
-  // Загрузка аватарки в хранилище Supabase
   const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setUploading(true)
@@ -20,17 +19,11 @@ export default function SettingsModal({ currentUser, onClose, onUpdate }: { curr
       
       const file = event.target.files[0]
       const fileExt = file.name.split('.').pop()
-      // Уникальное имя файла для каждого пользователя
       const filePath = `${currentUser.id}-${Math.random()}.${fileExt}`
 
-      // Загружаем файл
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file)
-
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file)
       if (uploadError) throw uploadError
 
-      // Получаем публичную ссылку на фото
       const { data } = supabase.storage.from('avatars').getPublicUrl(filePath)
       setAvatarUrl(data.publicUrl)
     } catch (error: any) {
@@ -44,22 +37,23 @@ export default function SettingsModal({ currentUser, onClose, onUpdate }: { curr
     setLoading(true)
     setError('')
     
-    // Сохраняем ВСЕ поля в базу
+    // ИСПОЛЬЗУЕМ UPSERT (Обновить или Создать)
     const { error } = await supabase
       .from('profiles')
-      .update({ 
+      .upsert({ 
+        id: currentUser.id, // Обязательно передаем ID
         name, 
         username: username.replace('@', ''), 
         phone,
         avatar_url: avatarUrl
       })
-      .eq('id', currentUser.id)
 
     if (error) {
       setError(error.message)
       setLoading(false)
     } else {
-      onUpdate() // Обновляем данные на главной странице
+      alert('Профиль успешно сохранен!') // Уведомление об успехе
+      onUpdate()
       onClose()
     }
   }
@@ -69,7 +63,6 @@ export default function SettingsModal({ currentUser, onClose, onUpdate }: { curr
       <div className="bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-2xl rounded-3xl w-full max-w-md p-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <h2 className="text-xl font-bold mb-4 text-black dark:text-white">Настройки профиля</h2>
         
-        {/* Загрузка аватарки */}
         <div className="flex flex-col items-center mb-6">
           <div 
             className="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-bold mb-3 shadow-lg relative overflow-hidden group cursor-pointer border-2 border-white/50" 
@@ -81,48 +74,25 @@ export default function SettingsModal({ currentUser, onClose, onUpdate }: { curr
             ) : (
               <span className="text-white">{name?.[0]?.toUpperCase()}</span>
             )}
-            {/* Затемнение при наведении */}
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
               <span className="text-white text-sm">Изменить</span>
             </div>
           </div>
-          <input 
-            id="avatar-upload" 
-            type="file" 
-            accept="image/*" 
-            onChange={uploadAvatar} 
-            disabled={uploading} 
-            className="hidden" 
-          />
+          <input id="avatar-upload" type="file" accept="image/*" onChange={uploadAvatar} disabled={uploading} className="hidden" />
           <span className="text-xs text-gray-500">{uploading ? 'Загрузка...' : 'Нажмите, чтобы сменить фото'}</span>
         </div>
 
         <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Имя (Никнейм)</label>
-        <input 
-          type="text" 
-          value={name} 
-          onChange={e => setName(e.target.value)}
-          placeholder="Ваше имя"
-          className="w-full bg-white/50 dark:bg-black/30 border border-white/30 dark:border-white/10 rounded-xl px-4 py-2 mb-4 outline-none text-black dark:text-white" 
-        />
+        <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Ваше имя"
+          className="w-full bg-white/50 dark:bg-black/30 border border-white/30 dark:border-white/10 rounded-xl px-4 py-2 mb-4 outline-none text-black dark:text-white" />
 
         <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Юзернейм (@)</label>
-        <input 
-          type="text" 
-          value={username} 
-          onChange={e => setUsername(e.target.value)}
-          placeholder="username"
-          className="w-full bg-white/50 dark:bg-black/30 border border-white/30 dark:border-white/10 rounded-xl px-4 py-2 mb-4 outline-none text-black dark:text-white" 
-        />
+        <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="username"
+          className="w-full bg-white/50 dark:bg-black/30 border border-white/30 dark:border-white/10 rounded-xl px-4 py-2 mb-4 outline-none text-black dark:text-white" />
 
         <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Номер телефона</label>
-        <input 
-          type="tel" 
-          value={phone} 
-          onChange={e => setPhone(e.target.value)}
-          placeholder="+7 999 000-00-00"
-          className="w-full bg-white/50 dark:bg-black/30 border border-white/30 dark:border-white/10 rounded-xl px-4 py-2 mb-4 outline-none text-black dark:text-white" 
-        />
+        <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+7 999 000-00-00"
+          className="w-full bg-white/50 dark:bg-black/30 border border-white/30 dark:border-white/10 rounded-xl px-4 py-2 mb-4 outline-none text-black dark:text-white" />
 
         {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
 
