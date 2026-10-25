@@ -13,6 +13,8 @@
     "@netlify/blobs": "^11.1.6",
     "@netlify/database": "^2.0.1",
     "@netlify/identity": "^2.0.0",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.45.4",
     "@vercel/analytics": "1.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
