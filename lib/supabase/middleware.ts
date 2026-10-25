@@ -23,7 +23,6 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Если пользователь не вошел, кидаем его на страницу логина
   if (!user && request.nextUrl.pathname === '/') {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
