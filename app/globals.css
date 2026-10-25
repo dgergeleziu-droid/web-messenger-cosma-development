@@ -161,3 +161,14 @@
     @apply bg-background text-foreground;
   }
 }
+html, body {
+  height: 100dvh; /* Используем динамическую высоту для мобильных */
+  overflow: hidden; /* Запрещаем скролл всей страницы */
+  overscroll-behavior: none; /* Убираем эффект "резинки" при скролле */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Отключаем зум при двойном тапе на iOS */
+* {
+  touch-action: manipulation;
+}
