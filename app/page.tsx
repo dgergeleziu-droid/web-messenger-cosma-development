@@ -8,15 +8,11 @@ import SettingsModal from "../components/SettingsModal";
 import CreateChatModal from "../components/CreateChatModal";
 import { createClient } from '@/lib/supabase/client'
 
-export type Message = { id: string; text: string; senderId: string; time: string; status: "sent"|"read" };
-export type Chat = { id: string; name: string; avatar: string; lastMsg: string; time: string; unread: number; online: boolean; type: string; messages: Message[] };
-
 export default function Home() {
-  const [activeChat, setActiveChat] = useState<Chat | null>(null);
-  const [chats, setChats] = useState<Chat[]>([]);
+  const [activeChat, setActiveChat] = useState<any>(null);
+  const [chats, setChats] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   
-  // Состояния для модалок
   const [showProfile, setShowProfile] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -32,29 +28,55 @@ export default function Home() {
     }
   };
 
-  useEffect(() => {
-    fetchUser();
-    // Загружаем реальные чаты из базы (в будущем)
-    // Пока для теста оставим пустой массив, если нет чатов
-  }, []);
-
-  const handleSelectUser = (otherUser: any) => {
-    setShowNewChat(false);
-    const newChat: Chat = {
-      id: Date.now().toString(), name: otherUser.name, avatar: otherUser.avatar_color || '#2aabee',
-      lastMsg: '', time: '', unread: 0, online: true, type: 'private', messages: []
-    };
-    setChats(prev => [newChat, ...prev]);
-    setActiveChat(newChat);
+  const fetchChats = async () => {
+    if (!currentUser) return;
+    // Получаем чаты, где состоит текущий пользователь
+    const { data: participants } = await supabase
+      .from('chat_participants')
+      .select('chat_id, chats(*)')
+      .eq('user_id', currentUser.id);
+      
+    if (participants) {
+      const userChats = participants.map((p: any) => p.chats);
+      setChats(userChats);
+    }
   };
 
-  const handleChatCreated = (newChat: any) => {
-    const chatObj: Chat = {
-      id: newChat.id, name: newChat.name, avatar: newChat.avatar_color,
-      lastMsg: '', time: '', unread: 0, online: false, type: newChat.type, messages: []
-    };
-    setChats(prev => [chatObj, ...prev]);
-    setActiveChat(chatObj);
+  useEffect(() => { fetchUser(); }, []);
+  useEffect(() => { if(currentUser) fetchChats(); }, [currentUser]);
+
+  // Создание или открытие личного чата
+  const handleSelectUser = async (otherUser: any) => {
+    setShowNewChat(false);
+    
+    // 1. Ищем, есть ли уже чат с этим человеком
+    const existingChat = chats.find(c => c.type === 'private' && c.name === otherUser.name);
+    if (existingChat) {
+      setActiveChat(existingChat);
+      return;
+    }
+
+    // 2. Если нет — создаем новый чат в базе
+    const { data: newChat, error } = await supabase.from('chats').insert({
+      type: 'private',
+      name: otherUser.name,
+      avatar_color: otherUser.avatar_color || '#2aabee'
+    }).select().single();
+
+    if (newChat && !error) {
+      // 3. Добавляем участников
+      await supabase.from('chat_participants').insert([
+        { chat_id: newChat.id, user_id: currentUser.id },
+        { chat_id: newChat.id, user_id: otherUser.id }
+      ]);
+      fetchChats(); // Обновляем список
+      setActiveChat(newChat);
+    }
+  };
+
+  const handleChatCreated = async (newChat: any) => {
+    fetchChats();
+    setActiveChat(newChat);
   };
 
   if (!currentUser) return <div className="h-screen flex items-center justify-center text-black dark:text-white text-xl font-semibold">Загрузка Cosma...</div>;
@@ -74,7 +96,7 @@ export default function Home() {
 
         <div className={`flex-1 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/40 dark:bg-black/20 ${activeChat ? "block" : "hidden md:flex md:items-center md:justify-center"}`}>
           {activeChat ? (
-            <ChatView chat={activeChat} onBack={() => setActiveChat(null)} />
+            <ChatView chat={activeChat} currentUser={currentUser} onBack={() => setActiveChat(null)} />
           ) : (
             <div className="text-center text-gray-700 dark:text-gray-300">
               <h2 className="text-4xl font-bold mb-2 tracking-tight">Cosma</h2>
@@ -86,11 +108,8 @@ export default function Home() {
 
       {showProfile && (
         <Profile 
-          user={currentUser} 
-          onClose={() => setShowProfile(false)} 
-          onOpenNewChat={() => setShowNewChat(true)}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenCreateChat={() => setShowCreateChat(true)}
+          user={currentUser} onClose={() => setShowProfile(false)} 
+          onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)}
         />
       )}
       {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
