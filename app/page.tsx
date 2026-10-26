@@ -15,32 +15,24 @@ export default function Home() {
   const [chats, setChats] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   
-  // Состояния для модальных окон
   const [showProfile, setShowProfile] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCreateChat, setShowCreateChat] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
 
-  // Состояния для уведомлений (шторка + звук)
   const [notification, setNotification] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   
   const supabase = createClient();
 
-  // 1. Загрузка профиля (создаем, если его нет)
   const fetchUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      
-      // Если профиля нет (старый аккаунт), принудительно создаем
       if (!profile) {
         const { data: newProfile } = await supabase.from('profiles').insert({
-          id: user.id,
-          name: user.email?.split('@')[0] || 'Пользователь',
-          avatar_color: '#2aabee',
-          stars: 100
+          id: user.id, name: user.email?.split('@')[0] || 'Пользователь', avatar_color: '#2aabee', stars: 100
         }).select().single();
         profile = newProfile;
       }
@@ -48,50 +40,58 @@ export default function Home() {
     }
   };
 
-  // 2. Загрузка списка чатов пользователя
+  // Загружаем чаты и сразу подтягиваем профили участников
   const fetchChats = async () => {
     if (!currentUser) return;
-    const { data: participants, error } = await supabase
+    
+    const { data, error } = await supabase
       .from('chat_participants')
-      .select('chat_id, chats(*)')
+      .select(`
+        chat_id, 
+        chats(*, chat_participants(user_id, profiles(name, avatar_url, avatar_color, status_emoji)))
+      `)
       .eq('user_id', currentUser.id);
-      
+
     if (error) {
       console.error("Ошибка загрузки чатов:", error);
       return;
     }
 
-    if (participants) {
-      const userChats = participants.map((p: any) => p.chats).filter(Boolean);
-      setChats(userChats);
+    if (data) {
+      const formattedChats = data.map((item: any) => {
+        const chat = item.chats;
+        if (chat.type === 'private') {
+          const otherParticipant = chat.chat_participants.find((p: any) => p.user_id !== currentUser.id);
+          if (otherParticipant && otherParticipant.profiles) {
+            chat.name = otherParticipant.profiles.name;
+            chat.avatar_url = otherParticipant.profiles.avatar_url;
+            chat.avatar_color = otherParticipant.profiles.avatar_color;
+            chat.status_emoji = otherParticipant.profiles.status_emoji;
+          }
+        }
+        return chat;
+      });
+      setChats(formattedChats);
     }
   };
 
   useEffect(() => { fetchUser(); }, []);
   useEffect(() => { if(currentUser) fetchChats(); }, [currentUser]);
 
-  // 3. ГЛОБАЛЬНЫЙ СЛУШАТЕЛЬ УВЕДОМЛЕНИЙ (Звук + Шторка)
   useEffect(() => {
     if (!currentUser) return;
-
     const channel = supabase.channel('global_notifications')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
         const newMsg = payload.new;
-
-        // Если сообщение от нас, или мы сейчас открыли этот чат — не отвлекаем
         if (newMsg.sender_id === currentUser.id || activeChat?.id === newMsg.chat_id) return;
 
-        // Получаем данные отправителя
         const { data: sender } = await supabase.from('profiles').select('name, avatar_color').eq('id', newMsg.sender_id).single();
         
         if (sender) {
-          // Включаем звук (браузеры разрешают звук только после первого клика по сайту)
           if (audioRef.current) {
             audioRef.current.currentTime = 0;
-            audioRef.current.play().catch(() => console.log('Звук заблокирован браузером до первого клика'));
+            audioRef.current.play().catch(() => console.log('Звук заблокирован до первого клика'));
           }
-
-          // Показываем выезжающую шторку
           setNotification({
             chatId: newMsg.chat_id,
             name: sender.name,
@@ -101,56 +101,37 @@ export default function Home() {
         }
       })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, activeChat, supabase]);
 
-  // 4. Создание личного чата (Обход ошибки RLS)
   const handleSelectUser = async (otherUser: any) => {
     setShowNewChat(false);
     
-    const existingChat = chats.find(c => c.type === 'private' && c.name === otherUser.name);
-    if (existingChat) { 
-      setActiveChat(existingChat); 
-      return; 
-    }
+    // Проверяем, есть ли уже чат
+    const existingChat = chats.find(c => 
+      c.type === 'private' && 
+      c.chat_participants?.some((p: any) => p.user_id === otherUser.id)
+    );
+    
+    if (existingChat) { setActiveChat(existingChat); return; }
 
     const newChatId = crypto.randomUUID();
 
+    // Создаем без имени
     const { error: chatError } = await supabase.from('chats').insert({
-      id: newChatId,
-      type: 'private', 
-      name: otherUser.name, 
-      avatar_color: otherUser.avatar_color || '#2aabee'
+      id: newChatId, type: 'private', avatar_color: otherUser.avatar_color || '#2aabee'
     });
 
-    if (chatError) {
-      alert("Ошибка при создании чата: " + chatError.message);
-      return;
-    }
+    if (chatError) { alert("Ошибка: " + chatError.message); return; }
 
-    const { error: participantError } = await supabase.from('chat_participants').insert([
+    await supabase.from('chat_participants').insert([
       { chat_id: newChatId, user_id: currentUser.id },
       { chat_id: newChatId, user_id: otherUser.id }
     ]);
 
-    if (participantError) {
-      alert("Ошибка при добавлении в чат: " + participantError.message);
-      return;
-    }
-
-    const newChatForState = { 
-      id: newChatId, 
-      type: 'private', 
-      name: otherUser.name, 
-      avatar_color: otherUser.avatar_color || '#2aabee',
-      status_emoji: otherUser.status_emoji 
-    };
-    setChats(prev => [newChatForState, ...prev]);
-    setActiveChat(newChatForState);
+    fetchChats();
   };
 
-  // 5. Обработка создания группы/канала
   const handleChatCreated = (newChat: any) => {
     fetchChats();
     setActiveChat(newChat);
@@ -159,13 +140,8 @@ export default function Home() {
   if (!currentUser) return <div className="h-[100dvh] flex items-center justify-center text-black dark:text-white text-xl font-semibold">Загрузка Cosma...</div>;
 
   return (
-    // Используем h-[100dvh] для правильной высоты на телефонах
     <main className="flex h-[100dvh] w-full overflow-hidden relative" onClick={() => audioRef.current?.load()}>
-      
-      {/* Звук уведомления */}
       <audio ref={audioRef} src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto" />
-
-      {/* Выезжающая шторка при новом сообщении */}
       <NotificationToast 
         data={notification} 
         onClose={() => setNotification(null)} 
@@ -176,31 +152,17 @@ export default function Home() {
         }} 
       />
 
-      {/* Задний фон для эффекта стекла */}
       <div className="absolute inset-0 z-0 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-[#0f172a] dark:to-[#1e1b4b]" />
       
       <div className="flex h-full w-full max-w-[1600px] mx-auto z-10 p-0 md:p-4 gap-4">
         
-        {/* Левая панель (Стекло) */}
         <div className={`w-full md:w-[380px] shrink-0 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/60 dark:bg-[#17212b]/60 ${activeChat ? "hidden md:block" : "block"}`}>
-          <ChatList 
-            chats={chats} 
-            activeId={activeChat?.id || null} 
-            onSelect={setActiveChat} 
-            user={currentUser} 
-            onOpenProfile={() => setShowProfile(true)} 
-            onOpenNewChat={() => setShowNewChat(true)}
-          />
+          <ChatList chats={chats} activeId={activeChat?.id || null} onSelect={setActiveChat} user={currentUser} onOpenProfile={() => setShowProfile(true)} onOpenNewChat={() => setShowNewChat(true)} />
         </div>
 
-        {/* Правая панель - Чат (Стекло) */}
         <div className={`flex-1 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/40 dark:bg-black/20 ${activeChat ? "block" : "hidden md:flex md:items-center md:justify-center"}`}>
           {activeChat ? (
-            <ChatView 
-              chat={activeChat} 
-              currentUser={currentUser} 
-              onBack={() => setActiveChat(null)} 
-            />
+            <ChatView chat={activeChat} currentUser={currentUser} onBack={() => setActiveChat(null)} />
           ) : (
             <div className="text-center text-gray-700 dark:text-gray-300">
               <h2 className="text-4xl font-bold mb-2 tracking-tight">Cosma</h2>
@@ -210,41 +172,11 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Модальные окна */}
-      {showProfile && (
-        <Profile 
-          user={currentUser} 
-          onClose={() => setShowProfile(false)} 
-          onOpenNewChat={() => setShowNewChat(true)} 
-          onOpenSettings={() => setShowSettings(true)} 
-          onOpenCreateChat={() => setShowCreateChat(true)}
-          onOpenAdmin={() => setShowAdmin(true)}
-        />
-      )}
-      {showNewChat && (
-        <NewChatModal 
-          currentUser={currentUser} 
-          onClose={() => setShowNewChat(false)} 
-          onSelectUser={handleSelectUser} 
-        />
-      )}
-      {showSettings && (
-        <SettingsModal 
-          currentUser={currentUser} 
-          onClose={() => setShowSettings(false)} 
-          onUpdate={fetchUser} 
-        />
-      )}
-      {showCreateChat && (
-        <CreateChatModal 
-          currentUser={currentUser} 
-          onClose={() => setShowCreateChat(false)} 
-          onCreated={handleChatCreated} 
-        />
-      )}
-      {showAdmin && (
-        <AdminPanel onClose={() => setShowAdmin(false)} />
-      )}
+      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} />}
+      {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
+      {showSettings && <SettingsModal currentUser={currentUser} onClose={() => setShowSettings(false)} onUpdate={fetchUser} />}
+      {showCreateChat && <CreateChatModal currentUser={currentUser} onClose={() => setShowCreateChat(false)} onCreated={handleChatCreated} />}
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
     </main>
   );
 }
