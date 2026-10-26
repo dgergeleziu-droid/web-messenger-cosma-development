@@ -8,7 +8,7 @@ import SettingsModal from "../components/SettingsModal";
 import CreateChatModal from "../components/CreateChatModal";
 import AdminPanel from "../components/AdminPanel";
 import NotificationToast from "../components/NotificationToast";
-import ThemeSettings from "../components/ThemeSettings"; // <-- Импортируем
+import ThemeSettings from "../components/ThemeSettings";
 import { createClient } from '@/lib/supabase/client'
 
 export default function Home() {
@@ -21,7 +21,7 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [showCreateChat, setShowCreateChat] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
-  const [showTheme, setShowTheme] = useState(false); // <-- Новый стейт
+  const [showTheme, setShowTheme] = useState(false);
 
   const [notification, setNotification] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -51,7 +51,7 @@ export default function Home() {
     if (data) {
       const formattedChats = data.map((item: any) => {
         const chat = item.chats;
-        if (chat.type === 'private') {
+        if (chat.type === 'private' || chat.type === 'secret') {
           const otherParticipant = chat.chat_participants.find((p: any) => p.user_id !== currentUser.id);
           if (otherParticipant && otherParticipant.profiles) {
             chat.name = otherParticipant.profiles.name;
@@ -77,14 +77,8 @@ export default function Home() {
         if (newMsg.sender_id === currentUser.id || activeChat?.id === newMsg.chat_id) return;
         const { data: sender } = await supabase.from('profiles').select('name, avatar_color').eq('id', newMsg.sender_id).single();
         if (sender) {
-          if (audioRef.current) {
-            audioRef.current.currentTime = 0;
-            audioRef.current.play().catch(() => console.log('Звук заблокирован до первого клика'));
-          }
-          setNotification({
-            chatId: newMsg.chat_id, name: sender.name, avatar_color: sender.avatar_color,
-            text: newMsg.gift ? `Подарок: ${newMsg.gift}` : (newMsg.file_type === 'image' ? '📷 Фотография' : newMsg.text),
-          });
+          if (audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play().catch(() => {}); }
+          setNotification({ chatId: newMsg.chat_id, name: sender.name, avatar_color: sender.avatar_color, text: newMsg.gift ? `Подарок: ${newMsg.gift}` : (newMsg.file_type === 'image' ? '📷 Фотография' : newMsg.text) });
         }
       })
       .subscribe();
@@ -155,7 +149,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Модалки */}
       {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} onOpenTheme={() => setShowTheme(true)} />}
       {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
       {showSettings && <SettingsModal currentUser={currentUser} onClose={() => setShowSettings(false)} onUpdate={fetchUser} />}
