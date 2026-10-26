@@ -37,7 +37,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   }, [chat.id, chat.type, currentUser.id, supabase]);
 
   const fetchMessages = async () => {
-    // Подтягиваем сообщения и данные того, на кого отвечают (reply_to)
     const { data } = await supabase
       .from('messages')
       .select('*, profiles(name, avatar_color), reply_to:messages!reply_to_id(text, sender_id, profiles(name))')
@@ -54,7 +53,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     fetchMessages();
     const channel = supabase.channel(`chat_${chat.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, () => {
-        fetchMessages(); // При любом изменении (новое, удаленное, измененное) перезапрашиваем
+        fetchMessages();
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -68,14 +67,12 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     setInput("");
     const newMsgId = crypto.randomUUID();
     
-    // Если редактируем
     if (editMsg) {
       await supabase.from('messages').update({ text, is_edited: true }).eq('id', editMsg.id);
       setEditMsg(null);
       return;
     }
 
-    // Если отвечаем
     await supabase.from('messages').insert({ 
       id: newMsgId, chat_id: chat.id, sender_id: currentUser.id, text,
       reply_to_id: replyTo ? replyTo.id : null 
@@ -90,8 +87,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   };
 
   const pinMessage = async (msg: any) => {
-    await supabase.from('messages').update({ is_pinned: false }).eq('chat_id', chat.id); // Снимаем старые
-    await supabase.from('messages').update({ is_pinned: !msg.is_pinned }).eq('id', msg.id); // Ставим/снимаем новое
+    await supabase.from('messages').update({ is_pinned: false }).eq('chat_id', chat.id);
+    await supabase.from('messages').update({ is_pinned: !msg.is_pinned }).eq('id', msg.id);
     setActiveMenuMsg(null);
     fetchMessages();
   };
@@ -106,21 +103,19 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     setSelectedMsgs([]);
   };
 
-  // Парсер форматирования (жирный, курсив, код)
   const formatText = (text: string) => {
     if (!text) return null;
     let html = text
-      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') // **Жирный**
-      .replace(/\*(.*?)\*/g, '<i>$1</i>')     // *Курсив*
-      .replace(/`(.*?)`/g, '<code class="bg-black/20 px-1 rounded text-sm font-mono">$1</code>') // `Код`
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/\*(.*?)\*/g, '<i>$1</i>')
+      .replace(/`(.*?)`/g, '<code class="bg-black/20 px-1 rounded text-sm font-mono">$1</code>')
       .replace(/\n/g, '<br/>');
     return <span dangerouslySetInnerHTML={{ __html: html }} />;
   };
 
-  // Обработка долгого нажатия
   let pressTimer: any;
   const handlePressStart = (msg: any) => {
-    if (selectedMsgs.length > 0) return; // Если в режиме выделения, не открываем меню
+    if (selectedMsgs.length > 0) return;
     pressTimer = setTimeout(() => setActiveMenuMsg(msg), 500);
   };
   const handlePressEnd = () => clearTimeout(pressTimer);
@@ -179,6 +174,34 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
           const isSelected = selectedMsgs.includes(m.id);
           const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           
+          // --- РЕНДЕР ПОДАРКА (Отдельная карточка) ---
+          if (m.gift) {
+            return (
+              <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                <div 
+                  onClick={() => selectedMsgs.length > 0 && selectForMassAction(m.id)}
+                  onMouseDown={() => handlePressStart(m)} 
+                  onMouseUp={handlePressEnd} 
+                  onMouseLeave={handlePressEnd}
+                  onTouchStart={() => handlePressStart(m)} 
+                  onTouchEnd={handlePressEnd}
+                  className={`relative flex flex-col items-center justify-center p-4 min-w-[160px] rounded-3xl shadow-xl border cursor-pointer select-none transition-all ${
+                    isSelected ? 'border-red-500 bg-red-500/20' : 
+                    (isMe ? 'rounded-br-sm bg-gradient-to-br from-[#2b3c4f] to-[#1a2530] border-yellow-500/30' : 'rounded-bl-sm bg-gradient-to-br from-white/90 to-gray-100 dark:from-[#182533]/90 dark:to-[#111a24] border-white/20 dark:border-yellow-500/20')
+                  }`}
+                >
+                  <div className="absolute top-2 left-3 text-[10px] uppercase font-bold text-yellow-500/70 tracking-widest">Подарок</div>
+                  <div className="text-6xl my-3 drop-shadow-2xl animate-bounce">{m.gift}</div>
+                  <div className="text-[15px] font-bold text-yellow-500 mb-1">{m.text.replace('Подарил ', '')}</div>
+                  <div className={`flex items-center justify-end gap-1 text-[11px] w-full ${isMe ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {time} {isMe && <span>✓✓</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // --- РЕНДЕР ОБЫЧНОГО СООБЩЕНИЯ ---
           return (
             <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
               <div 
@@ -193,10 +216,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   (isMe ? 'bg-blue-500/90 text-white rounded-br-sm border-transparent' : 'bg-white/80 dark:bg-[#182533]/90 text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10')
                 }`}>
                 
-                {/* Имя отправителя */}
                 {!isMe && <div className="text-xs font-bold text-blue-500 mb-1">{m.profiles?.name || 'Собеседник'}</div>}
                 
-                {/* Ответ на сообщение */}
                 {m.reply_to && (
                   <div className={`border-l-4 border-blue-400 pl-2 mb-2 py-1 rounded-r-md text-sm ${isMe ? 'bg-blue-600/50' : 'bg-black/5 dark:bg-white/5'}`}>
                     <div className="font-bold text-[11px] text-blue-200 dark:text-blue-400">
@@ -206,7 +227,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   </div>
                 )}
 
-                {/* Медиа */}
                 {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover" />}
                 {m.file_type === 'file' && (
                   <a href={m.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isMe ? 'bg-blue-600/50' : 'bg-gray-200/50 dark:bg-gray-800/50'}`}>
@@ -214,15 +234,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   </a>
                 )}
                 
-                {/* Текст с форматированием */}
                 {!m.file_type && <div className="text-[15px] leading-snug break-words px-1 pb-1">{formatText(m.text)}</div>}
-                
-                {/* Подарок */}
-                {m.gift && (
-                  <div className="flex flex-col items-center p-2 rounded-xl bg-gradient-to-br from-yellow-400/20 to-orange-500/20 mb-1 border border-yellow-500/30">
-                    <div className="text-5xl animate-bounce">{m.gift}</div>
-                  </div>
-                )}
 
                 <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
                   {m.is_pinned && <span>📌</span>}
@@ -236,31 +248,31 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         <div ref={endRef} />
       </div>
 
-      {/* Меню действий (Bottom Sheet) */}
+      {/* Меню действий */}
       {activeMenuMsg && (
         <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mb-4"></div>
             <div className="grid grid-cols-4 gap-2 mb-4">
               <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">↩️</span><span className="text-xs">Ответить</span>
+                <span className="text-2xl mb-1">↩️</span><span className="text-xs text-black dark:text-white">Ответить</span>
               </button>
               <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">➡️</span><span className="text-xs">Переслать</span>
+                <span className="text-2xl mb-1">➡️</span><span className="text-xs text-black dark:text-white">Переслать</span>
               </button>
-              {activeMenuMsg.sender_id === currentUser.id && (
+              {activeMenuMsg.sender_id === currentUser.id && !activeMenuMsg.gift && (
                 <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                  <span className="text-2xl mb-1">✏️</span><span className="text-xs">Изменить</span>
+                  <span className="text-2xl mb-1">✏️</span><span className="text-xs text-black dark:text-white">Изменить</span>
                 </button>
               )}
               <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">📋</span><span className="text-xs">Копировать</span>
+                <span className="text-2xl mb-1">📋</span><span className="text-xs text-black dark:text-white">Копировать</span>
               </button>
               <button onClick={() => pinMessage(activeMenuMsg)} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">📌</span><span className="text-xs">{activeMenuMsg.is_pinned ? 'Открепить' : 'Закрепить'}</span>
+                <span className="text-2xl mb-1">📌</span><span className="text-xs text-black dark:text-white">{activeMenuMsg.is_pinned ? 'Открепить' : 'Закрепить'}</span>
               </button>
               <button onClick={() => { selectForMassAction(activeMenuMsg.id); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">☑️</span><span className="text-xs">Выбрать</span>
+                <span className="text-2xl mb-1">☑️</span><span className="text-xs text-black dark:text-white">Выбрать</span>
               </button>
               <button onClick={() => deleteMessage(activeMenuMsg.id)} className="flex flex-col items-center p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl text-red-500">
                 <span className="text-2xl mb-1">🗑</span><span className="text-xs">Удалить</span>
@@ -274,7 +286,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       {/* Поле ввода */}
       <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 dark:border-white/10 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         
-        {/* Превью ответа или редактирования */}
         {replyTo && !editMsg && (
           <div className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-xl border-l-4 border-blue-500">
             <div className="flex-1 min-w-0">
@@ -302,7 +313,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
             value={input} 
             onChange={e => setInput(e.target.value)} 
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} 
-            placeholder="Сообщение (используй **жирный**, *курсив*, `код`)" 
+            placeholder="Сообщение..." // <--- Убрали подсказку
             rows={1} 
             className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" 
           />
