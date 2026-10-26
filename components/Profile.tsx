@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
-export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, onOpenCreateChat, onOpenAdmin }: any) {
+export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, onOpenCreateChat, onOpenAdmin, onOpenTheme }: any) {
   const supabase = createClient()
   const router = useRouter()
   const [isDark, setIsDark] = useState(false)
@@ -37,6 +37,7 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
         </div>
 
         <div className="flex-1 overflow-y-auto py-2">
+          
           <div className="flex items-center justify-between px-5 py-3 hover:bg-black/5 cursor-pointer" onClick={toggleTheme}>
             <div className="flex items-center gap-4">
               <span className="text-xl">{isDark ? '🌙' : '☀️'}</span>
@@ -49,7 +50,12 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
 
           <div className="h-px bg-black/5 dark:bg-white/10 mx-4 my-1" />
 
-          {/* КНОПКА АДМИНКИ (показывается только админам) */}
+          {/* КНОПКА ОФОРМЛЕНИЯ */}
+          <button onClick={() => { onClose(); onOpenTheme(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left">
+            <span className="text-xl">🎨</span>
+            <span className="text-[15px] font-medium text-black dark:text-white">Оформление</span>
+          </button>
+
           {user?.is_admin && (
             <button onClick={() => { onClose(); onOpenAdmin(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-red-500/10 text-left">
               <span className="text-xl">👑</span>
