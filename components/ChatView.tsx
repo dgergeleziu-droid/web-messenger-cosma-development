@@ -2,7 +2,6 @@
 import { useState, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import GiftModal from "./GiftModal";
-import ReactionModal from "./ReactionModal";
 
 export default function ChatView({ chat, currentUser, onBack }: { chat: any, currentUser: any, onBack: () => void }) {
   const [messages, setMessages] = useState<any[]>([]);
@@ -10,12 +9,13 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
   const [showGifts, setShowGifts] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [otherUser, setOtherUser] = useState<any>(null);
-  const [reactionMessageId, setReactionMessageId] = useState<string | null>(null);
+  const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null); // Для меню действий
   
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
+  // Загружаем собеседника
   useEffect(() => {
     const fetchOtherUser = async () => {
       if (chat.type === 'private' || chat.type === 'secret') {
@@ -27,12 +27,13 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
       }
     };
     fetchOtherUser();
+    supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id).then();
   }, [chat.id, chat.type, currentUser.id, supabase]);
 
   const fetchMessages = async () => {
+    // Принудительно подтягиваем профиль отправителя для каждого сообщения
     const { data } = await supabase.from('messages').select('*, profiles(name, avatar_color)').eq('chat_id', chat.id).order('created_at', { ascending: true });
     if (data) {
-      // Фильтруем истекшие сообщения
       const now = new Date().getTime();
       setMessages(data.filter(m => !m.expires_at || new Date(m.expires_at).getTime() > now));
     }
@@ -42,10 +43,13 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
     fetchMessages();
     const channel = supabase.channel(`chat_${chat.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, async (payload) => {
-        setMessages(prev => prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
+        // Подгружаем профиль отправителя для нового сообщения
+        const { data: sender } = await supabase.from('profiles').select('name, avatar_color').eq('id', payload.new.sender_id).single();
+        const newMessage = { ...payload.new, profiles: sender };
+        setMessages(prev => prev.find(m => m.id === payload.new.id) ? prev : [...prev, newMessage]);
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, async (payload) => {
-        setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, (payload) => {
+        setMessages(prev => prev.filter(m => m.id !== payload.old.id));
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -63,18 +67,20 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
       id: newMsgId, chat_id: chat.id, sender_id: currentUser.id, text, 
       created_at: new Date().toISOString(), profiles: { name: currentUser.name } 
     };
-    
-    // Если секретный чат, ставим таймер (1 минута)
-    if (chat.type === 'secret') {
-      newMessage.expires_at = new Date(Date.now() + 60000).toISOString();
-    }
-
+    if (chat.type === 'secret') newMessage.expires_at = new Date(Date.now() + 60000).toISOString();
     setMessages(prev => [...prev, newMessage]);
     
     await supabase.from('messages').insert({ 
       id: newMsgId, chat_id: chat.id, sender_id: currentUser.id, text,
       expires_at: chat.type === 'secret' ? new Date(Date.now() + 60000).toISOString() : null
     });
+  };
+
+  const deleteMessage = async (msgId: string) => {
+    if (!confirm('Удалить сообщение?')) return;
+    setSelectedMsgId(null);
+    setMessages(prev => prev.filter(m => m.id !== msgId)); // Мгновенно убираем с экрана
+    await supabase.from('messages').delete().eq('id', msgId);
   };
 
   // ... (uploadFile без изменений)
@@ -87,7 +93,7 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
       const isImage = file.type.startsWith('image/');
       const { error: uploadError } = await supabase.storage.from('chat_media').upload(filePath, file);
       if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
+      const { data } = await supabase.storage.from('chat_media').getPublicUrl(filePath);
       const newMsgId = crypto.randomUUID();
       await supabase.from('messages').insert({
         id: newMsgId, chat_id: chat.id, sender_id: currentUser.id,
@@ -101,15 +107,15 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
 
   const isOnline = otherUser?.last_seen ? (new Date().getTime() - new Date(otherUser.last_seen).getTime()) < 120000 : false;
 
-  // Обработка долгого нажатия
+  // Долгое нажатие
   let pressTimer: any;
   const handlePressStart = (id: string) => {
-    pressTimer = setTimeout(() => setReactionMessageId(id), 500); // 0.5 сек
+    pressTimer = setTimeout(() => setSelectedMsgId(id), 500);
   };
   const handlePressEnd = () => clearTimeout(pressTimer);
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621]">
+    <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative">
       
       {/* Шапка */}
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-50">
@@ -122,10 +128,9 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
           <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">
             {otherUser?.name || chat.name || 'Чат'}
             {chat.type === 'secret' && <span className="text-sm">🔒</span>}
-            {otherUser?.status_emoji && <span className="text-sm">{otherUser.status_emoji}</span>}
           </div>
           <div className={`text-xs truncate ${isOnline ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>
-            {chat.type === 'secret' ? 'Сообщения исчезают через 1 мин.' : (isOnline ? 'в сети' : 'был(а) недавно')}
+            {chat.type === 'secret' ? 'Исчезающие сообщения' : (isOnline ? 'в сети' : 'был(а) недавно')}
           </div>
         </div>
       </div>
@@ -136,7 +141,17 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
           const isMe = m.sender_id === currentUser.id;
           const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           
-          if (m.gift) { /* ... (блок подарка) ... */ }
+          if (m.gift) {
+            return (
+              <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                <div className={`flex flex-col items-center p-4 rounded-2xl bg-gradient-to-br from-yellow-400/20 to-orange-500/20 border border-yellow-500/30 backdrop-blur-md ${isMe ? 'rounded-br-sm' : 'rounded-bl-sm'}`}>
+                  <div className="text-5xl mb-2 animate-bounce">{m.gift}</div>
+                  <div className="text-sm font-bold text-yellow-600 dark:text-yellow-400">{m.text}</div>
+                  <div className="text-[10px] text-gray-500 mt-2">{time}</div>
+                </div>
+              </div>
+            );
+          }
 
           return (
             <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
@@ -148,6 +163,9 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
                 onTouchEnd={handlePressEnd}
                 className={`relative max-w-[85%] md:max-w-[60%] p-1.5 rounded-2xl shadow-sm backdrop-blur-md border border-white/20 dark:border-white/10 cursor-pointer ${isMe ? 'bg-blue-500/90 text-white rounded-br-sm' : 'bg-white/80 dark:bg-[#182533]/90 text-black dark:text-white rounded-bl-sm'}`}>
                 
+                {/* Имя отправителя (если это не я) */}
+                {!isMe && <div className="text-xs font-bold text-blue-500 mb-1 px-2">{m.profiles?.name || 'Собеседник'}</div>}
+                
                 {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover" />}
                 {m.file_type === 'file' && (
                   <a href={m.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isMe ? 'bg-blue-600/50' : 'bg-gray-200/50 dark:bg-gray-800/50'}`}>
@@ -155,19 +173,9 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
                   </a>
                 )}
                 {!m.file_type && <div className="text-[15px] leading-snug break-words px-2 pb-1">{m.text}</div>}
-                
-                {/* Реакции */}
-                {m.reactions && Object.keys(m.reactions).length > 0 && (
-                  <div className="flex gap-1 mt-1 flex-wrap">
-                    {Object.entries(m.reactions).map(([emoji, users]: any) => (
-                      <span key={emoji} className="bg-black/20 dark:bg-white/20 rounded-full px-1.5 py-0.5 text-xs">{emoji} {users.length}</span>
-                    ))}
-                  </div>
-                )}
 
                 <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-2 pb-1 ${isMe ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
                   {time} {isMe && <span>✓✓</span>}
-                  {chat.type === 'secret' && <span>🔥</span>}
                 </div>
               </div>
             </div>
@@ -175,6 +183,23 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
         })}
         <div ref={endRef} />
       </div>
+
+      {/* Меню действий (Удалить) */}
+      {selectedMsgId && (
+        <div className="absolute inset-0 z-[60] bg-black/20" onClick={() => setSelectedMsgId(null)}>
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-white dark:bg-[#17212b] p-2 rounded-2xl shadow-xl flex gap-2" onClick={e => e.stopPropagation()}>
+            <button 
+              onClick={() => deleteMessage(selectedMsgId)} 
+              className="px-4 py-2 text-red-500 font-medium hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition"
+            >
+              🗑 Удалить
+            </button>
+            <button onClick={() => setSelectedMsgId(null)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition">
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Поле ввода */}
       <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 dark:border-white/10 flex items-end gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
@@ -186,14 +211,6 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
       </div>
 
       {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} />}
-      {reactionMessageId && (
-        <ReactionModal 
-          messageId={reactionMessageId} 
-          currentReactions={messages.find(m => m.id === reactionMessageId)?.reactions || {}} 
-          onClose={() => setReactionMessageId(null)} 
-          onReacted={fetchMessages} 
-        />
-      )}
     </div>
   );
 }
