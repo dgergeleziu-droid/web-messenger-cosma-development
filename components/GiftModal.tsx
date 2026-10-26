@@ -17,17 +17,15 @@ export default function GiftModal({ currentUser, chatId, onClose, onGiftSent }: 
 
   const sendGift = async (gift: any) => {
     setLoading(true)
-    
-    // Вызываем нашу защищенную функцию в базе данных
     const { error } = await supabase.rpc('send_gift', {
       p_chat_id: chatId,
       p_gift: gift.emoji,
       p_price: gift.price,
-      p_text: `Подарил ${gift.name}`
+      p_text: `Подарил ${gift.name}` // <--- Передаем текст
     })
 
     if (error) {
-      alert(error.message) // Если звезд не хватает, выскочит "Недостаточно звезд!"
+      alert('Ошибка: ' + error.message)
     } else {
       onGiftSent()
       onClose()
@@ -38,18 +36,16 @@ export default function GiftModal({ currentUser, chatId, onClose, onGiftSent }: 
   return (
     <div className="absolute inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
       <div className="bg-white/90 dark:bg-[#17212b]/95 backdrop-blur-2xl rounded-t-3xl md:rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-white/20 pb-8" onClick={e => e.stopPropagation()}>
-        
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold text-black dark:text-white">Подарки</h2>
           <div className="flex items-center gap-1 bg-yellow-500/20 text-yellow-600 dark:text-yellow-500 px-3 py-1 rounded-full font-bold text-sm">
             <span>⭐</span> {currentUser.stars || 0}
           </div>
         </div>
-
         <div className="grid grid-cols-3 gap-3">
           {GIFTS.map(gift => (
             <button key={gift.id} onClick={() => sendGift(gift)} disabled={loading}
-              className="flex flex-col items-center justify-center p-4 bg-white/50 dark:bg-black/30 rounded-2xl border border-white/30 dark:border-white/10 hover:bg-white/80 dark:hover:bg-black/50 transition cursor-pointer">
+              className="flex flex-col items-center justify-center p-4 bg-white/50 dark:bg-black/30 rounded-2xl border border-white/30 dark:border-white/10 hover:bg-white/80 transition">
               <span className="text-4xl mb-2">{gift.emoji}</span>
               <span className="text-xs font-semibold text-black dark:text-white mb-1">{gift.name}</span>
               <span className="text-xs font-bold text-yellow-600 dark:text-yellow-500 flex items-center gap-1">⭐ {gift.price}</span>
