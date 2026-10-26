@@ -11,7 +11,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [uploading, setUploading] = useState(false);
   const [otherUser, setOtherUser] = useState<any>(null);
   
-  // Меню действий
+  // Состояния для меню действий
   const [activeMenuMsg, setActiveMenuMsg] = useState<any>(null);
   const [replyTo, setReplyTo] = useState<any>(null);
   const [editMsg, setEditMsg] = useState<any>(null);
@@ -22,7 +22,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
-  // Загружаем собеседника
+  // 1. Загружаем профиль собеседника и слушаем его изменения
   useEffect(() => {
     const fetchOtherUser = async () => {
       if (chat.type === 'private' || chat.type === 'secret') {
@@ -34,8 +34,22 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       }
     };
     fetchOtherUser();
-  }, [chat.id, chat.type, currentUser.id, supabase]);
 
+    const profileChannel = supabase.channel(`profile_${chat.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
+        if (payload.new.id === otherUser?.id) setOtherUser(payload.new);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(profileChannel); };
+  }, [chat.id, chat.type, currentUser.id, supabase, otherUser?.id]);
+
+  // Обновляем свой last_seen при входе в чат
+  useEffect(() => {
+    supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id).then();
+  }, [currentUser.id, supabase]);
+
+  // 2. Загрузка сообщений (с подтягиванием данных того, на кого ответили)
   const fetchMessages = async () => {
     const { data } = await supabase
       .from('messages')
@@ -49,6 +63,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     }
   };
 
+  // Подписка на Realtime изменения (новые, удаленные, измененные)
   useEffect(() => {
     fetchMessages();
     const channel = supabase.channel(`chat_${chat.id}`)
@@ -59,27 +74,35 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     return () => { supabase.removeChannel(channel); };
   }, [chat.id]);
 
+  // Скролл вниз при новых сообщениях
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
+  // 3. Отправка сообщения или сохранение редактирования
   const sendMessage = async () => {
     if (!input.trim()) return;
     const text = input;
     setInput("");
-    const newMsgId = crypto.randomUUID();
     
+    // Если мы редактируем сообщение
     if (editMsg) {
       await supabase.from('messages').update({ text, is_edited: true }).eq('id', editMsg.id);
       setEditMsg(null);
       return;
     }
 
+    // Если отправляем новое
+    const newMsgId = crypto.randomUUID();
     await supabase.from('messages').insert({ 
-      id: newMsgId, chat_id: chat.id, sender_id: currentUser.id, text,
+      id: newMsgId, 
+      chat_id: chat.id, 
+      sender_id: currentUser.id, 
+      text,
       reply_to_id: replyTo ? replyTo.id : null 
     });
     setReplyTo(null);
   };
 
+  // 4. Действия с сообщениями
   const deleteMessage = async (msgId: string) => {
     setActiveMenuMsg(null);
     setMessages(prev => prev.filter(m => m.id !== msgId));
@@ -87,7 +110,9 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   };
 
   const pinMessage = async (msg: any) => {
+    // Снимаем закрепление со старых
     await supabase.from('messages').update({ is_pinned: false }).eq('chat_id', chat.id);
+    // Закрепляем/открепляем выбранное
     await supabase.from('messages').update({ is_pinned: !msg.is_pinned }).eq('id', msg.id);
     setActiveMenuMsg(null);
     fetchMessages();
@@ -103,6 +128,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     setSelectedMsgs([]);
   };
 
+  // 5. Парсер форматирования (жирный, курсив, код)
   const formatText = (text: string) => {
     if (!text) return null;
     let html = text
@@ -113,9 +139,10 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     return <span dangerouslySetInnerHTML={{ __html: html }} />;
   };
 
+  // Обработка долгого нажатия
   let pressTimer: any;
   const handlePressStart = (msg: any) => {
-    if (selectedMsgs.length > 0) return;
+    if (selectedMsgs.length > 0) return; // Если в режиме выделения, не открываем меню
     pressTimer = setTimeout(() => setActiveMenuMsg(msg), 500);
   };
   const handlePressEnd = () => clearTimeout(pressTimer);
@@ -126,9 +153,10 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   return (
     <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative">
       
-      {/* Шапка */}
+      {/* --- ШАПКА ЧАТА --- */}
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
+          // Режим массового выделения
           <div className="flex-1 flex justify-between items-center px-2">
             <span className="font-bold text-black dark:text-white">Выбрано: {selectedMsgs.length}</span>
             <div className="flex gap-2">
@@ -137,6 +165,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
             </div>
           </div>
         ) : (
+          // Обычный режим
           <>
             <button onClick={onBack} className="md:hidden p-1 text-2xl text-gray-700 dark:text-white">←</button>
             <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold relative shrink-0 overflow-hidden" style={{ backgroundColor: otherUser?.avatar_color || chat.avatar_color || '#2aabee' }}>
@@ -148,14 +177,14 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                 {otherUser?.name || chat.name || 'Чат'} {chat.type === 'secret' && '🔒'}
               </div>
               <div className={`text-xs truncate ${isOnline ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>
-                {isOnline ? 'в сети' : 'был(а) недавно'}
+                {chat.type === 'secret' ? 'Исчезающие сообщения' : (isOnline ? 'в сети' : 'был(а) недавно')}
               </div>
             </div>
           </>
         )}
       </div>
 
-      {/* Закрепленное сообщение */}
+      {/* --- ЗАКРЕПЛЕННОЕ СООБЩЕНИЕ --- */}
       {pinnedMsg && (
         <div className="bg-white/90 dark:bg-[#17212b]/95 backdrop-blur-md px-3 py-2 border-b border-black/10 dark:border-white/10 flex items-center gap-3 shrink-0 z-30">
           <div className="w-1 h-8 bg-blue-500 rounded-full" />
@@ -167,14 +196,14 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         </div>
       )}
 
-      {/* Сообщения */}
+      {/* --- СПИСОК СООБЩЕНИЙ --- */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.map((m) => {
           const isMe = m.sender_id === currentUser.id;
           const isSelected = selectedMsgs.includes(m.id);
           const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           
-          // --- РЕНДЕР ПОДАРКА (Отдельная карточка) ---
+          // --- РЕНДЕР ПОДАРКА (Карточка) ---
           if (m.gift) {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
@@ -216,8 +245,10 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   (isMe ? 'bg-blue-500/90 text-white rounded-br-sm border-transparent' : 'bg-white/80 dark:bg-[#182533]/90 text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10')
                 }`}>
                 
+                {/* Имя отправителя (если это не я) */}
                 {!isMe && <div className="text-xs font-bold text-blue-500 mb-1">{m.profiles?.name || 'Собеседник'}</div>}
                 
+                {/* Блок ответа на сообщение */}
                 {m.reply_to && (
                   <div className={`border-l-4 border-blue-400 pl-2 mb-2 py-1 rounded-r-md text-sm ${isMe ? 'bg-blue-600/50' : 'bg-black/5 dark:bg-white/5'}`}>
                     <div className="font-bold text-[11px] text-blue-200 dark:text-blue-400">
@@ -227,15 +258,18 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   </div>
                 )}
 
-                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover" />}
+                {/* Медиа */}
+                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover cursor-pointer" onClick={() => window.open(m.file_url, '_blank')} />}
                 {m.file_type === 'file' && (
                   <a href={m.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isMe ? 'bg-blue-600/50' : 'bg-gray-200/50 dark:bg-gray-800/50'}`}>
                     <span className="text-2xl">📄</span><span className="text-sm underline truncate">{m.text.replace('📎 ', '')}</span>
                   </a>
                 )}
                 
+                {/* Текст с форматированием */}
                 {!m.file_type && <div className="text-[15px] leading-snug break-words px-1 pb-1">{formatText(m.text)}</div>}
 
+                {/* Время и галочки */}
                 <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
                   {m.is_pinned && <span>📌</span>}
                   {m.is_edited && <span className="italic">изм.</span>}
@@ -248,7 +282,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         <div ref={endRef} />
       </div>
 
-      {/* Меню действий */}
+      {/* --- МЕНЮ ДЕЙСТВИЙ (Bottom Sheet) --- */}
       {activeMenuMsg && (
         <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
@@ -260,11 +294,14 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
               <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
                 <span className="text-2xl mb-1">➡️</span><span className="text-xs text-black dark:text-white">Переслать</span>
               </button>
+              
+              {/* Изменять можно только текст, не подарки */}
               {activeMenuMsg.sender_id === currentUser.id && !activeMenuMsg.gift && (
                 <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
                   <span className="text-2xl mb-1">✏️</span><span className="text-xs text-black dark:text-white">Изменить</span>
                 </button>
               )}
+              
               <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
                 <span className="text-2xl mb-1">📋</span><span className="text-xs text-black dark:text-white">Копировать</span>
               </button>
@@ -283,9 +320,10 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         </div>
       )}
 
-      {/* Поле ввода */}
+      {/* --- ПОЛЕ ВВОДА --- */}
       <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 dark:border-white/10 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         
+        {/* Превью ответа */}
         {replyTo && !editMsg && (
           <div className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-xl border-l-4 border-blue-500">
             <div className="flex-1 min-w-0">
@@ -295,6 +333,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
             <button onClick={() => setReplyTo(null)} className="text-gray-500 px-2">✕</button>
           </div>
         )}
+        
+        {/* Превью редактирования */}
         {editMsg && (
           <div className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-xl border-l-4 border-green-500">
             <div className="flex-1 min-w-0">
@@ -313,7 +353,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
             value={input} 
             onChange={e => setInput(e.target.value)} 
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} 
-            placeholder="Сообщение..." // <--- Убрали подсказку
+            placeholder="Сообщение..." 
             rows={1} 
             className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" 
           />
@@ -323,7 +363,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         </div>
       </div>
 
-      {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} />}
+      {/* Модалки */}
+      {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} receiverId={otherUser?.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} />}
       {forwardMsg && <ForwardModal chats={allChats} currentUser={currentUser} messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} onForwarded={fetchMessages} />}
     </div>
   );
