@@ -26,6 +26,7 @@ export default function Home() {
   
   const supabase = createClient();
 
+  // 1. Загрузка профиля
   const fetchUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
@@ -40,7 +41,7 @@ export default function Home() {
     }
   };
 
-  // Загружаем чаты и сразу подтягиваем профили участников
+  // 2. Загрузка списка чатов (с актуальными именами собеседников)
   const fetchChats = async () => {
     if (!currentUser) return;
     
@@ -78,6 +79,7 @@ export default function Home() {
   useEffect(() => { fetchUser(); }, []);
   useEffect(() => { if(currentUser) fetchChats(); }, [currentUser]);
 
+  // 3. Глобальные уведомления (Шторка + Звук)
   useEffect(() => {
     if (!currentUser) return;
     const channel = supabase.channel('global_notifications')
@@ -104,10 +106,30 @@ export default function Home() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, activeChat, supabase]);
 
+  // 4. ДОГРУЗКА ПРИ ВОЗВРАТЕ НА ВКЛАДКУ (для мобильных)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchChats(); // Обновляем список чатов
+        if (currentUser) {
+          supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id).then();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
+  }, [currentUser]);
+
+  // 5. Создание личного чата
   const handleSelectUser = async (otherUser: any) => {
     setShowNewChat(false);
     
-    // Проверяем, есть ли уже чат
     const existingChat = chats.find(c => 
       c.type === 'private' && 
       c.chat_participants?.some((p: any) => p.user_id === otherUser.id)
@@ -117,7 +139,6 @@ export default function Home() {
 
     const newChatId = crypto.randomUUID();
 
-    // Создаем без имени
     const { error: chatError } = await supabase.from('chats').insert({
       id: newChatId, type: 'private', avatar_color: otherUser.avatar_color || '#2aabee'
     });
@@ -142,6 +163,7 @@ export default function Home() {
   return (
     <main className="flex h-[100dvh] w-full overflow-hidden relative" onClick={() => audioRef.current?.load()}>
       <audio ref={audioRef} src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto" />
+      
       <NotificationToast 
         data={notification} 
         onClose={() => setNotification(null)} 
