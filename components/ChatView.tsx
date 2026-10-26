@@ -14,6 +14,7 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
+  // ... (код получения otherUser оставляем как был)
   useEffect(() => {
     const fetchOtherUser = async () => {
       if (chat.type === 'private') {
@@ -25,34 +26,45 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
       }
     };
     fetchOtherUser();
-
-    const profileChannel = supabase.channel(`profile_${chat.id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
-        if (payload.new.id === otherUser?.id) setOtherUser(payload.new);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(profileChannel); };
-  }, [chat.id, chat.type, currentUser.id, supabase, otherUser?.id]);
-
-  useEffect(() => {
-    supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id).then();
-  }, [currentUser.id, supabase]);
+  }, [chat.id, chat.type, currentUser.id, supabase]);
 
   const fetchMessages = async () => {
     const { data } = await supabase.from('messages').select('*, profiles(name, avatar_color)').eq('chat_id', chat.id).order('created_at', { ascending: true });
     if (data) setMessages(data);
   };
 
+  // Подписка на Realtime + ДОГРУЗКА при возврате на вкладку
   useEffect(() => {
     fetchMessages();
+
     const channel = supabase.channel(`chat_${chat.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, async (payload) => {
         setMessages(prev => prev.find(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    // ФУНКЦИЯ ДОГРУЗКИ (срабатывает, когда телефон просыпается)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Вкладка активна, проверяем новые сообщения...');
+        fetchMessages(); // Просто заново качаем историю
+        // Обновляем свой статус "в сети"
+        supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id).then();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Дополнительно слушаем фокус (когда просто тапаешь по экрану)
+    window.addEventListener('focus', handleVisibilityChange);
+
+    return () => { 
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
   }, [chat.id]);
 
+  // ... (остальной код sendMessage и uploadFile оставляем как был)
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const sendMessage = async () => {
@@ -66,6 +78,7 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
     await supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id);
   };
 
+  // ... (uploadFile без изменений)
   const uploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setUploading(true);
@@ -100,6 +113,7 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
   return (
     <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621]">
       
+      {/* Шапка */}
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-50">
         <button onClick={onBack} className="md:hidden p-1 text-2xl text-gray-700 dark:text-white">←</button>
         <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold relative shrink-0 overflow-hidden" style={{ backgroundColor: otherUser?.avatar_color || chat.avatar_color || '#2aabee' }}>
@@ -117,6 +131,7 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
         </div>
       </div>
 
+      {/* Сообщения */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.map((m) => {
           const isMe = m.sender_id === currentUser.id;
@@ -154,11 +169,10 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
         <div ref={endRef} />
       </div>
 
+      {/* Поле ввода */}
       <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 dark:border-white/10 flex items-end gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         <input type="file" ref={fileInputRef} onChange={uploadFile} className="hidden" accept="image/*,application/pdf,.doc,.docx,.zip" />
-        <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl hover:bg-black/10 transition">
-          {uploading ? '⏳' : '📎'}
-        </button>
+        <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl hover:bg-black/10 transition">{uploading ? '⏳' : '📎'}</button>
         <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-xl hover:bg-black/10 transition">🎁</button>
         <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" />
         <button onClick={sendMessage} className="p-3 rounded-full bg-blue-500 text-white shrink-0 hover:bg-blue-600 transition shadow-lg">➤</button>
