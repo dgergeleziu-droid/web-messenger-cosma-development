@@ -8,6 +8,7 @@ import SettingsModal from "../components/SettingsModal";
 import CreateChatModal from "../components/CreateChatModal";
 import AdminPanel from "../components/AdminPanel";
 import NotificationToast from "../components/NotificationToast";
+import ThemeSettings from "../components/ThemeSettings"; // <-- Импортируем
 import { createClient } from '@/lib/supabase/client'
 
 export default function Home() {
@@ -20,13 +21,13 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [showCreateChat, setShowCreateChat] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showTheme, setShowTheme] = useState(false); // <-- Новый стейт
 
   const [notification, setNotification] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   
   const supabase = createClient();
 
-  // 1. Загрузка профиля
   const fetchUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
@@ -41,22 +42,11 @@ export default function Home() {
     }
   };
 
-  // 2. Загрузка списка чатов (с актуальными именами собеседников)
   const fetchChats = async () => {
     if (!currentUser) return;
-    
-    const { data, error } = await supabase
-      .from('chat_participants')
-      .select(`
-        chat_id, 
-        chats(*, chat_participants(user_id, profiles(name, avatar_url, avatar_color, status_emoji)))
-      `)
+    const { data, error } = await supabase.from('chat_participants')
+      .select(`chat_id, chats(*, chat_participants(user_id, profiles(name, avatar_url, avatar_color, status_emoji)))`)
       .eq('user_id', currentUser.id);
-
-    if (error) {
-      console.error("Ошибка загрузки чатов:", error);
-      return;
-    }
 
     if (data) {
       const formattedChats = data.map((item: any) => {
@@ -79,25 +69,20 @@ export default function Home() {
   useEffect(() => { fetchUser(); }, []);
   useEffect(() => { if(currentUser) fetchChats(); }, [currentUser]);
 
-  // 3. Глобальные уведомления (Шторка + Звук)
   useEffect(() => {
     if (!currentUser) return;
     const channel = supabase.channel('global_notifications')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
         const newMsg = payload.new;
         if (newMsg.sender_id === currentUser.id || activeChat?.id === newMsg.chat_id) return;
-
         const { data: sender } = await supabase.from('profiles').select('name, avatar_color').eq('id', newMsg.sender_id).single();
-        
         if (sender) {
           if (audioRef.current) {
             audioRef.current.currentTime = 0;
             audioRef.current.play().catch(() => console.log('Звук заблокирован до первого клика'));
           }
           setNotification({
-            chatId: newMsg.chat_id,
-            name: sender.name,
-            avatar_color: sender.avatar_color,
+            chatId: newMsg.chat_id, name: sender.name, avatar_color: sender.avatar_color,
             text: newMsg.gift ? `Подарок: ${newMsg.gift}` : (newMsg.file_type === 'image' ? '📷 Фотография' : newMsg.text),
           });
         }
@@ -106,50 +91,32 @@ export default function Home() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, activeChat, supabase]);
 
-  // 4. ДОГРУЗКА ПРИ ВОЗВРАТЕ НА ВКЛАДКУ (для мобильных)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchChats(); // Обновляем список чатов
-        if (currentUser) {
-          supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id).then();
-        }
+        fetchChats();
+        if (currentUser) supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id).then();
       }
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
-
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
     };
   }, [currentUser]);
 
-  // 5. Создание личного чата
   const handleSelectUser = async (otherUser: any) => {
     setShowNewChat(false);
-    
-    const existingChat = chats.find(c => 
-      c.type === 'private' && 
-      c.chat_participants?.some((p: any) => p.user_id === otherUser.id)
-    );
-    
+    const existingChat = chats.find(c => c.type === 'private' && c.chat_participants?.some((p: any) => p.user_id === otherUser.id));
     if (existingChat) { setActiveChat(existingChat); return; }
-
     const newChatId = crypto.randomUUID();
-
-    const { error: chatError } = await supabase.from('chats').insert({
-      id: newChatId, type: 'private', avatar_color: otherUser.avatar_color || '#2aabee'
-    });
-
+    const { error: chatError } = await supabase.from('chats').insert({ id: newChatId, type: 'private', avatar_color: otherUser.avatar_color || '#2aabee' });
     if (chatError) { alert("Ошибка: " + chatError.message); return; }
-
     await supabase.from('chat_participants').insert([
       { chat_id: newChatId, user_id: currentUser.id },
       { chat_id: newChatId, user_id: otherUser.id }
     ]);
-
     fetchChats();
   };
 
@@ -163,21 +130,15 @@ export default function Home() {
   return (
     <main className="flex h-[100dvh] w-full overflow-hidden relative" onClick={() => audioRef.current?.load()}>
       <audio ref={audioRef} src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto" />
-      
-      <NotificationToast 
-        data={notification} 
-        onClose={() => setNotification(null)} 
-        onClick={() => {
-          const chatToOpen = chats.find(c => c.id === notification.chatId);
-          if (chatToOpen) setActiveChat(chatToOpen);
-          setNotification(null);
-        }} 
-      />
+      <NotificationToast data={notification} onClose={() => setNotification(null)} onClick={() => {
+        const chatToOpen = chats.find(c => c.id === notification.chatId);
+        if (chatToOpen) setActiveChat(chatToOpen);
+        setNotification(null);
+      }} />
 
       <div className="absolute inset-0 z-0 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-[#0f172a] dark:to-[#1e1b4b]" />
       
       <div className="flex h-full w-full max-w-[1600px] mx-auto z-10 p-0 md:p-4 gap-4">
-        
         <div className={`w-full md:w-[380px] shrink-0 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/60 dark:bg-[#17212b]/60 ${activeChat ? "hidden md:block" : "block"}`}>
           <ChatList chats={chats} activeId={activeChat?.id || null} onSelect={setActiveChat} user={currentUser} onOpenProfile={() => setShowProfile(true)} onOpenNewChat={() => setShowNewChat(true)} />
         </div>
@@ -194,11 +155,13 @@ export default function Home() {
         </div>
       </div>
 
-      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} />}
+      {/* Модалки */}
+      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} onOpenTheme={() => setShowTheme(true)} />}
       {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
       {showSettings && <SettingsModal currentUser={currentUser} onClose={() => setShowSettings(false)} onUpdate={fetchUser} />}
       {showCreateChat && <CreateChatModal currentUser={currentUser} onClose={() => setShowCreateChat(false)} onCreated={handleChatCreated} />}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+      {showTheme && <ThemeSettings onClose={() => setShowTheme(false)} />}
     </main>
   );
 }
