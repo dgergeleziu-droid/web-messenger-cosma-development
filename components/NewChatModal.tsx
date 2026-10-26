@@ -5,31 +5,37 @@ import { createClient } from '@/lib/supabase/client'
 export default function NewChatModal({ currentUser, onClose, onSelectUser }: { currentUser: any, onClose: () => void, onSelectUser: (user: any) => void }) {
   const [query, setQuery] = useState('')
   const [users, setUsers] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
   const supabase = createClient()
 
   useEffect(() => {
     const searchUsers = async () => {
-      if (!query.trim()) { setUsers([]); return }
+      // Очищаем строку от @ и пробелов
+      const cleanQuery = query.replace('@', '').trim()
       
-      // Убираем @, если пользователь его ввел
-      const cleanQuery = query.replace('@', '')
+      if (!cleanQuery) {
+        setUsers([])
+        return
+      }
 
-      // Ищем и по имени, и по юзернейму (ilike = без учета регистра)
+      setLoading(true)
+      
+      // Ищем ТОЧНОЕ совпадение по username (eq) или точное совпадение по имени
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .neq('id', currentUser.id)
-        .or(`name.ilike.%${cleanQuery}%,username.ilike.%${cleanQuery}%`)
-        .limit(10)
+        .or(`username.eq.${cleanQuery},name.eq.${cleanQuery}`) // Строгое совпадение
+        .limit(5)
       
-      if (error) {
-        console.error('Ошибка поиска:', error)
-      } else if (data) {
+      if (data) {
         setUsers(data)
       }
+      setLoading(false)
     }
 
-    const timer = setTimeout(searchUsers, 300)
+    // Задержка, чтобы не спамить базу при каждом нажатии клавиши
+    const timer = setTimeout(searchUsers, 400)
     return () => clearTimeout(timer)
   }, [query, currentUser.id, supabase])
 
@@ -41,14 +47,23 @@ export default function NewChatModal({ currentUser, onClose, onSelectUser }: { c
           <input
             autoFocus
             type="text"
-            placeholder="Поиск по имени или @юзернейму..."
+            placeholder="Введите точный @username..."
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full bg-white/50 dark:bg-black/30 border border-white/30 dark:border-white/10 text-black dark:text-white rounded-xl px-4 py-3 outline-none backdrop-blur-md"
           />
+          <p className="text-xs text-gray-500 mt-2">
+            Поиск работает только по полному совпадению юзернейма или имени.
+          </p>
         </div>
+        
         <div className="flex-1 overflow-y-auto p-2">
-          {users.length === 0 && query && <p className="p-4 text-center text-gray-500">Никого не найдено</p>}
+          {loading && <p className="p-4 text-center text-gray-500 animate-pulse">Поиск...</p>}
+          
+          {!loading && users.length === 0 && query && (
+            <p className="p-4 text-center text-gray-500">Пользователь не найден. Введите точный @username.</p>
+          )}
+
           {users.map(user => (
             <button key={user.id} onClick={() => onSelectUser(user)} className="w-full flex items-center gap-3 p-3 hover:bg-white/40 dark:hover:bg-white/5 rounded-xl text-left transition">
               <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold overflow-hidden" style={{ backgroundColor: user.avatar_color || '#2aabee' }}>
