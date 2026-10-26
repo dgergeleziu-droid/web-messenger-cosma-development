@@ -2,14 +2,21 @@
 import { useState, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import GiftModal from "./GiftModal";
+import ForwardModal from "./ForwardModal";
 
-export default function ChatView({ chat, currentUser, onBack }: { chat: any, currentUser: any, onBack: () => void }) {
+export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [showGifts, setShowGifts] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [otherUser, setOtherUser] = useState<any>(null);
-  const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null); // Для меню действий
+  
+  // Меню действий
+  const [activeMenuMsg, setActiveMenuMsg] = useState<any>(null);
+  const [replyTo, setReplyTo] = useState<any>(null);
+  const [editMsg, setEditMsg] = useState<any>(null);
+  const [forwardMsg, setForwardMsg] = useState<any>(null);
+  const [selectedMsgs, setSelectedMsgs] = useState<string[]>([]); // Для массового выделения
   
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -27,12 +34,16 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
       }
     };
     fetchOtherUser();
-    supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id).then();
   }, [chat.id, chat.type, currentUser.id, supabase]);
 
   const fetchMessages = async () => {
-    // Принудительно подтягиваем профиль отправителя для каждого сообщения
-    const { data } = await supabase.from('messages').select('*, profiles(name, avatar_color)').eq('chat_id', chat.id).order('created_at', { ascending: true });
+    // Подтягиваем сообщения и данные того, на кого отвечают (reply_to)
+    const { data } = await supabase
+      .from('messages')
+      .select('*, profiles(name, avatar_color), reply_to:messages!reply_to_id(text, sender_id, profiles(name))')
+      .eq('chat_id', chat.id)
+      .order('created_at', { ascending: true });
+      
     if (data) {
       const now = new Date().getTime();
       setMessages(data.filter(m => !m.expires_at || new Date(m.expires_at).getTime() > now));
@@ -42,14 +53,8 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
   useEffect(() => {
     fetchMessages();
     const channel = supabase.channel(`chat_${chat.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, async (payload) => {
-        // Подгружаем профиль отправителя для нового сообщения
-        const { data: sender } = await supabase.from('profiles').select('name, avatar_color').eq('id', payload.new.sender_id).single();
-        const newMessage = { ...payload.new, profiles: sender };
-        setMessages(prev => prev.find(m => m.id === payload.new.id) ? prev : [...prev, newMessage]);
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, (payload) => {
-        setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, () => {
+        fetchMessages(); // При любом изменении (новое, удаленное, измененное) перезапрашиваем
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -60,121 +65,168 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
   const sendMessage = async () => {
     if (!input.trim()) return;
     const text = input;
-    const newMsgId = crypto.randomUUID();
     setInput("");
+    const newMsgId = crypto.randomUUID();
     
-    const newMessage: any = { 
-      id: newMsgId, chat_id: chat.id, sender_id: currentUser.id, text, 
-      created_at: new Date().toISOString(), profiles: { name: currentUser.name } 
-    };
-    if (chat.type === 'secret') newMessage.expires_at = new Date(Date.now() + 60000).toISOString();
-    setMessages(prev => [...prev, newMessage]);
-    
+    // Если редактируем
+    if (editMsg) {
+      await supabase.from('messages').update({ text, is_edited: true }).eq('id', editMsg.id);
+      setEditMsg(null);
+      return;
+    }
+
+    // Если отвечаем
     await supabase.from('messages').insert({ 
       id: newMsgId, chat_id: chat.id, sender_id: currentUser.id, text,
-      expires_at: chat.type === 'secret' ? new Date(Date.now() + 60000).toISOString() : null
+      reply_to_id: replyTo ? replyTo.id : null 
     });
+    setReplyTo(null);
   };
 
   const deleteMessage = async (msgId: string) => {
-    if (!confirm('Удалить сообщение?')) return;
-    setSelectedMsgId(null);
-    setMessages(prev => prev.filter(m => m.id !== msgId)); // Мгновенно убираем с экрана
+    setActiveMenuMsg(null);
+    setMessages(prev => prev.filter(m => m.id !== msgId));
     await supabase.from('messages').delete().eq('id', msgId);
   };
 
-  // ... (uploadFile без изменений)
-  const uploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      setUploading(true);
-      if (!event.target.files || event.target.files.length === 0) return;
-      const file = event.target.files[0];
-      const filePath = `${chat.id}/${crypto.randomUUID()}.${file.name.split('.').pop()}`;
-      const isImage = file.type.startsWith('image/');
-      const { error: uploadError } = await supabase.storage.from('chat_media').upload(filePath, file);
-      if (uploadError) throw uploadError;
-      const { data } = await supabase.storage.from('chat_media').getPublicUrl(filePath);
-      const newMsgId = crypto.randomUUID();
-      await supabase.from('messages').insert({
-        id: newMsgId, chat_id: chat.id, sender_id: currentUser.id,
-        text: isImage ? '📷 Фотография' : `📎 ${file.name}`,
-        file_url: data.publicUrl, file_type: isImage ? 'image' : 'file'
-      });
-      fetchMessages();
-    } catch (error: any) { alert('Ошибка: ' + error.message); } 
-    finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+  const pinMessage = async (msg: any) => {
+    await supabase.from('messages').update({ is_pinned: false }).eq('chat_id', chat.id); // Снимаем старые
+    await supabase.from('messages').update({ is_pinned: !msg.is_pinned }).eq('id', msg.id); // Ставим/снимаем новое
+    setActiveMenuMsg(null);
+    fetchMessages();
   };
 
-  const isOnline = otherUser?.last_seen ? (new Date().getTime() - new Date(otherUser.last_seen).getTime()) < 120000 : false;
+  const selectForMassAction = (msgId: string) => {
+    setSelectedMsgs(prev => prev.includes(msgId) ? prev.filter(id => id !== msgId) : [...prev, msgId]);
+  };
 
-  // Долгое нажатие
+  const massDelete = async () => {
+    if (!confirm(`Удалить ${selectedMsgs.length} сообщений?`)) return;
+    await supabase.from('messages').delete().in('id', selectedMsgs);
+    setSelectedMsgs([]);
+  };
+
+  // Парсер форматирования (жирный, курсив, код)
+  const formatText = (text: string) => {
+    if (!text) return null;
+    let html = text
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') // **Жирный**
+      .replace(/\*(.*?)\*/g, '<i>$1</i>')     // *Курсив*
+      .replace(/`(.*?)`/g, '<code class="bg-black/20 px-1 rounded text-sm font-mono">$1</code>') // `Код`
+      .replace(/\n/g, '<br/>');
+    return <span dangerouslySetInnerHTML={{ __html: html }} />;
+  };
+
+  // Обработка долгого нажатия
   let pressTimer: any;
-  const handlePressStart = (id: string) => {
-    pressTimer = setTimeout(() => setSelectedMsgId(id), 500);
+  const handlePressStart = (msg: any) => {
+    if (selectedMsgs.length > 0) return; // Если в режиме выделения, не открываем меню
+    pressTimer = setTimeout(() => setActiveMenuMsg(msg), 500);
   };
   const handlePressEnd = () => clearTimeout(pressTimer);
+
+  const isOnline = otherUser?.last_seen ? (new Date().getTime() - new Date(otherUser.last_seen).getTime()) < 120000 : false;
+  const pinnedMsg = messages.find(m => m.is_pinned);
 
   return (
     <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative">
       
       {/* Шапка */}
-      <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-50">
-        <button onClick={onBack} className="md:hidden p-1 text-2xl text-gray-700 dark:text-white">←</button>
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold relative shrink-0 overflow-hidden" style={{ backgroundColor: otherUser?.avatar_color || chat.avatar_color || '#2aabee' }}>
-          {otherUser?.avatar_url || chat.avatar_url ? <img src={otherUser?.avatar_url || chat.avatar_url} className="w-full h-full object-cover" /> : (otherUser?.name || chat.name)?.[0]?.toUpperCase()}
-          {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-[#17212b] rounded-full" />}
-        </div>
-        <div className="flex flex-col min-w-0">
-          <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">
-            {otherUser?.name || chat.name || 'Чат'}
-            {chat.type === 'secret' && <span className="text-sm">🔒</span>}
+      <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
+        {selectedMsgs.length > 0 ? (
+          <div className="flex-1 flex justify-between items-center px-2">
+            <span className="font-bold text-black dark:text-white">Выбрано: {selectedMsgs.length}</span>
+            <div className="flex gap-2">
+              <button onClick={massDelete} className="text-red-500 p-2">🗑 Удалить</button>
+              <button onClick={() => setSelectedMsgs([])} className="text-gray-500 p-2">Отмена</button>
+            </div>
           </div>
-          <div className={`text-xs truncate ${isOnline ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>
-            {chat.type === 'secret' ? 'Исчезающие сообщения' : (isOnline ? 'в сети' : 'был(а) недавно')}
-          </div>
-        </div>
+        ) : (
+          <>
+            <button onClick={onBack} className="md:hidden p-1 text-2xl text-gray-700 dark:text-white">←</button>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold relative shrink-0 overflow-hidden" style={{ backgroundColor: otherUser?.avatar_color || chat.avatar_color || '#2aabee' }}>
+              {otherUser?.avatar_url || chat.avatar_url ? <img src={otherUser?.avatar_url || chat.avatar_url} className="w-full h-full object-cover" /> : (otherUser?.name || chat.name)?.[0]?.toUpperCase()}
+              {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-[#17212b] rounded-full" />}
+            </div>
+            <div className="flex flex-col min-w-0">
+              <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">
+                {otherUser?.name || chat.name || 'Чат'} {chat.type === 'secret' && '🔒'}
+              </div>
+              <div className={`text-xs truncate ${isOnline ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                {isOnline ? 'в сети' : 'был(а) недавно'}
+              </div>
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Закрепленное сообщение */}
+      {pinnedMsg && (
+        <div className="bg-white/90 dark:bg-[#17212b]/95 backdrop-blur-md px-3 py-2 border-b border-black/10 dark:border-white/10 flex items-center gap-3 shrink-0 z-30">
+          <div className="w-1 h-8 bg-blue-500 rounded-full" />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-blue-500 font-bold">Закрепленное сообщение</div>
+            <div className="text-sm text-black dark:text-white truncate">{pinnedMsg.text || 'Медиафайл'}</div>
+          </div>
+          <button onClick={() => pinMessage(pinnedMsg)} className="text-gray-400 p-2 text-sm hover:text-black">✕</button>
+        </div>
+      )}
 
       {/* Сообщения */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.map((m) => {
           const isMe = m.sender_id === currentUser.id;
+          const isSelected = selectedMsgs.includes(m.id);
           const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           
-          if (m.gift) {
-            return (
-              <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                <div className={`flex flex-col items-center p-4 rounded-2xl bg-gradient-to-br from-yellow-400/20 to-orange-500/20 border border-yellow-500/30 backdrop-blur-md ${isMe ? 'rounded-br-sm' : 'rounded-bl-sm'}`}>
-                  <div className="text-5xl mb-2 animate-bounce">{m.gift}</div>
-                  <div className="text-sm font-bold text-yellow-600 dark:text-yellow-400">{m.text}</div>
-                  <div className="text-[10px] text-gray-500 mt-2">{time}</div>
-                </div>
-              </div>
-            );
-          }
-
           return (
             <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
               <div 
-                onMouseDown={() => handlePressStart(m.id)} 
+                onClick={() => selectedMsgs.length > 0 && selectForMassAction(m.id)}
+                onMouseDown={() => handlePressStart(m)} 
                 onMouseUp={handlePressEnd} 
                 onMouseLeave={handlePressEnd}
-                onTouchStart={() => handlePressStart(m.id)} 
+                onTouchStart={() => handlePressStart(m)} 
                 onTouchEnd={handlePressEnd}
-                className={`relative max-w-[85%] md:max-w-[60%] p-1.5 rounded-2xl shadow-sm backdrop-blur-md border border-white/20 dark:border-white/10 cursor-pointer ${isMe ? 'bg-blue-500/90 text-white rounded-br-sm' : 'bg-white/80 dark:bg-[#182533]/90 text-black dark:text-white rounded-bl-sm'}`}>
+                className={`relative max-w-[85%] md:max-w-[60%] p-2 rounded-2xl shadow-sm border backdrop-blur-md transition-all cursor-pointer ${
+                  isSelected ? 'border-red-500 bg-red-500/20' : 
+                  (isMe ? 'bg-blue-500/90 text-white rounded-br-sm border-transparent' : 'bg-white/80 dark:bg-[#182533]/90 text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10')
+                }`}>
                 
-                {/* Имя отправителя (если это не я) */}
-                {!isMe && <div className="text-xs font-bold text-blue-500 mb-1 px-2">{m.profiles?.name || 'Собеседник'}</div>}
+                {/* Имя отправителя */}
+                {!isMe && <div className="text-xs font-bold text-blue-500 mb-1">{m.profiles?.name || 'Собеседник'}</div>}
                 
+                {/* Ответ на сообщение */}
+                {m.reply_to && (
+                  <div className={`border-l-4 border-blue-400 pl-2 mb-2 py-1 rounded-r-md text-sm ${isMe ? 'bg-blue-600/50' : 'bg-black/5 dark:bg-white/5'}`}>
+                    <div className="font-bold text-[11px] text-blue-200 dark:text-blue-400">
+                      {m.reply_to.sender_id === currentUser.id ? 'Вы' : m.reply_to.profiles?.name}
+                    </div>
+                    <div className="truncate opacity-80">{m.reply_to.text}</div>
+                  </div>
+                )}
+
+                {/* Медиа */}
                 {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover" />}
                 {m.file_type === 'file' && (
                   <a href={m.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isMe ? 'bg-blue-600/50' : 'bg-gray-200/50 dark:bg-gray-800/50'}`}>
                     <span className="text-2xl">📄</span><span className="text-sm underline truncate">{m.text.replace('📎 ', '')}</span>
                   </a>
                 )}
-                {!m.file_type && <div className="text-[15px] leading-snug break-words px-2 pb-1">{m.text}</div>}
+                
+                {/* Текст с форматированием */}
+                {!m.file_type && <div className="text-[15px] leading-snug break-words px-1 pb-1">{formatText(m.text)}</div>}
+                
+                {/* Подарок */}
+                {m.gift && (
+                  <div className="flex flex-col items-center p-2 rounded-xl bg-gradient-to-br from-yellow-400/20 to-orange-500/20 mb-1 border border-yellow-500/30">
+                    <div className="text-5xl animate-bounce">{m.gift}</div>
+                  </div>
+                )}
 
-                <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-2 pb-1 ${isMe ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
+                <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
+                  {m.is_pinned && <span>📌</span>}
+                  {m.is_edited && <span className="italic">изм.</span>}
                   {time} {isMe && <span>✓✓</span>}
                 </div>
               </div>
@@ -184,33 +236,84 @@ export default function ChatView({ chat, currentUser, onBack }: { chat: any, cur
         <div ref={endRef} />
       </div>
 
-      {/* Меню действий (Удалить) */}
-      {selectedMsgId && (
-        <div className="absolute inset-0 z-[60] bg-black/20" onClick={() => setSelectedMsgId(null)}>
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-white dark:bg-[#17212b] p-2 rounded-2xl shadow-xl flex gap-2" onClick={e => e.stopPropagation()}>
-            <button 
-              onClick={() => deleteMessage(selectedMsgId)} 
-              className="px-4 py-2 text-red-500 font-medium hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition"
-            >
-              🗑 Удалить
-            </button>
-            <button onClick={() => setSelectedMsgId(null)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition">
-              Отмена
-            </button>
+      {/* Меню действий (Bottom Sheet) */}
+      {activeMenuMsg && (
+        <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
+          <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mb-4"></div>
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
+                <span className="text-2xl mb-1">↩️</span><span className="text-xs">Ответить</span>
+              </button>
+              <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
+                <span className="text-2xl mb-1">➡️</span><span className="text-xs">Переслать</span>
+              </button>
+              {activeMenuMsg.sender_id === currentUser.id && (
+                <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
+                  <span className="text-2xl mb-1">✏️</span><span className="text-xs">Изменить</span>
+                </button>
+              )}
+              <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
+                <span className="text-2xl mb-1">📋</span><span className="text-xs">Копировать</span>
+              </button>
+              <button onClick={() => pinMessage(activeMenuMsg)} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
+                <span className="text-2xl mb-1">📌</span><span className="text-xs">{activeMenuMsg.is_pinned ? 'Открепить' : 'Закрепить'}</span>
+              </button>
+              <button onClick={() => { selectForMassAction(activeMenuMsg.id); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
+                <span className="text-2xl mb-1">☑️</span><span className="text-xs">Выбрать</span>
+              </button>
+              <button onClick={() => deleteMessage(activeMenuMsg.id)} className="flex flex-col items-center p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl text-red-500">
+                <span className="text-2xl mb-1">🗑</span><span className="text-xs">Удалить</span>
+              </button>
+            </div>
+            <button onClick={() => setActiveMenuMsg(null)} className="w-full py-3 bg-gray-100 dark:bg-white/5 rounded-xl font-medium text-black dark:text-white">Отмена</button>
           </div>
         </div>
       )}
 
       {/* Поле ввода */}
-      <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 dark:border-white/10 flex items-end gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
-        <input type="file" ref={fileInputRef} onChange={uploadFile} className="hidden" accept="image/*,application/pdf,.doc,.docx,.zip" />
-        <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl">{uploading ? '⏳' : '📎'}</button>
-        <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-xl">🎁</button>
-        <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" />
-        <button onClick={sendMessage} className="p-3 rounded-full bg-blue-500 text-white shrink-0 hover:bg-blue-600 transition shadow-lg">➤</button>
+      <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 dark:border-white/10 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
+        
+        {/* Превью ответа или редактирования */}
+        {replyTo && !editMsg && (
+          <div className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-xl border-l-4 border-blue-500">
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold text-blue-500">Ответ: {replyTo.profiles?.name || 'Собеседник'}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-300 truncate">{replyTo.text}</div>
+            </div>
+            <button onClick={() => setReplyTo(null)} className="text-gray-500 px-2">✕</button>
+          </div>
+        )}
+        {editMsg && (
+          <div className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-xl border-l-4 border-green-500">
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold text-green-500">Редактирование</div>
+              <div className="text-sm text-gray-600 dark:text-gray-300 truncate">{editMsg.text}</div>
+            </div>
+            <button onClick={() => { setEditMsg(null); setInput(''); }} className="text-gray-500 px-2">✕</button>
+          </div>
+        )}
+
+        <div className="flex items-end gap-2">
+          <input type="file" ref={fileInputRef} onChange={() => {}} className="hidden" />
+          <button onClick={() => fileInputRef.current?.click()} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl">📎</button>
+          <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-xl">🎁</button>
+          <textarea 
+            value={input} 
+            onChange={e => setInput(e.target.value)} 
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} 
+            placeholder="Сообщение (используй **жирный**, *курсив*, `код`)" 
+            rows={1} 
+            className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" 
+          />
+          <button onClick={sendMessage} className={`p-3 rounded-full text-white shrink-0 transition shadow-lg ${editMsg ? 'bg-green-500' : 'bg-blue-500'}`}>
+            {editMsg ? '✓' : '➤'}
+          </button>
+        </div>
       </div>
 
       {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} />}
+      {forwardMsg && <ForwardModal chats={allChats} currentUser={currentUser} messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} onForwarded={fetchMessages} />}
     </div>
   );
 }
