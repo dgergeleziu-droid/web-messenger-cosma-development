@@ -1,13 +1,12 @@
 'use client'
 import { useState } from 'react'
-import { Chat } from "../app/page"
 
 export default function ChatList({ chats, activeId, onSelect, user, onOpenProfile, onOpenNewChat }: any) {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState<'all' | 'unread'>('all')
 
-  const filteredChats = chats.filter((chat: Chat) => {
-    const matchesSearch = chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredChats = chats.filter((chat: any) => {
+    const matchesSearch = chat.name?.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesTab = activeTab === 'all' || (activeTab === 'unread' && chat.unread > 0)
     return matchesSearch && matchesTab
   })
@@ -30,33 +29,30 @@ export default function ChatList({ chats, activeId, onSelect, user, onOpenProfil
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {filteredChats.length === 0 ? (
-          <div className="p-8 text-center text-gray-600 dark:text-gray-400">
-            <p>{searchQuery ? 'Ничего не найдено' : 'Нет чатов'}</p>
-          </div>
-        ) : (
-          filteredChats.map((chat: Chat) => (
-            <div key={chat.id} onClick={() => onSelect(chat)}
-              className={`flex items-center gap-3 p-3 mx-2 my-1 rounded-xl cursor-pointer transition-all ${activeId === chat.id ? 'bg-blue-500/20 shadow-sm' : 'hover:bg-white/40 dark:hover:bg-white/10'}`}>
-              
-              <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg relative shrink-0" style={{ backgroundColor: chat.avatar || '#2aabee' }}>
-                {chat.type === 'channel' ? '📢' : chat.type === 'group' ? '👥' : chat.name?.[0]?.toUpperCase()}
+        {filteredChats.map((chat: any) => (
+          <div key={chat.id} onClick={() => onSelect(chat)}
+            className={`flex items-center gap-3 p-3 mx-2 my-1 rounded-xl cursor-pointer transition-all ${activeId === chat.id ? 'bg-blue-500/20 shadow-sm' : 'hover:bg-white/40 dark:hover:bg-white/10'}`}>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg relative shrink-0 overflow-hidden" style={{ backgroundColor: chat.avatar_color || '#2aabee' }}>
+              {chat.avatar_url ? (
+                <img src={chat.avatar_url} className="w-full h-full object-cover" />
+              ) : (
+                chat.type === 'channel' ? '📢' : chat.type === 'group' ? '👥' : chat.name?.[0]?.toUpperCase()
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-between items-baseline mb-0.5">
+                <span className="font-semibold truncate text-black dark:text-white text-[15px] flex items-center gap-1">
+                  {chat.name || 'Без имени'} 
+                  {chat.status_emoji && <span className="text-xs">{chat.status_emoji}</span>}
+                </span>
+                <span className="text-xs text-gray-500 shrink-0">{chat.time}</span>
               </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-baseline mb-0.5">
-                  <span className="font-semibold truncate text-black dark:text-white text-[15px]">
-                    {chat.name} {chat.type === 'channel' && '📢'} {chat.type === 'group' && '👥'}
-                  </span>
-                  <span className="text-xs text-gray-500 shrink-0">{chat.time}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 dark:text-gray-400 truncate">{chat.lastMsg || 'Нет сообщений'}</span>
-                </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600 dark:text-gray-400 truncate">{chat.lastMsg || 'Нет сообщений'}</span>
               </div>
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
     </div>
   );
