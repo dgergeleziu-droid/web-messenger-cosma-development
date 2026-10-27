@@ -9,7 +9,7 @@ import CreateChatModal from "../components/CreateChatModal";
 import AdminPanel from "../components/AdminPanel";
 import NotificationToast from "../components/NotificationToast";
 import ThemeSettings from "../components/ThemeSettings";
-import PrivacySettings from "../components/PrivacySettings"; // <-- Импорт
+import PrivacySettings from "../components/PrivacySettings";
 import { createClient } from '@/lib/supabase/client'
 
 export default function Home() {
@@ -17,13 +17,14 @@ export default function Home() {
   const [chats, setChats] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   
+  // Состояния для модальных окон
   const [showProfile, setShowProfile] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCreateChat, setShowCreateChat] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
-  const [showPrivacy, setShowPrivacy] = useState(false); // <-- Новый стейт
+  const [showPrivacy, setShowPrivacy] = useState(false); // <--- Стейт для конфиденциальности
 
   const [notification, setNotification] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -46,13 +47,8 @@ export default function Home() {
 
   const fetchChats = async () => {
     if (!currentUser) return;
-    
-    const { data, error } = await supabase
-      .from('chat_participants')
-      .select(`
-        chat_id, 
-        chats(*, chat_participants(user_id, profiles(name, avatar_url, avatar_color, status_emoji)))
-      `)
+    const { data, error } = await supabase.from('chat_participants')
+      .select(`chat_id, chats(*, chat_participants(user_id, profiles(name, avatar_url, avatar_color, status_emoji)))`)
       .eq('user_id', currentUser.id);
 
     if (error) return;
@@ -60,14 +56,7 @@ export default function Home() {
     if (data) {
       const formattedChats = await Promise.all(data.map(async (item: any) => {
         const chat = item.chats;
-        
-        const { data: lastMsgData } = await supabase
-          .from('messages')
-          .select('text, file_type, gift, created_at')
-          .eq('chat_id', chat.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
+        const { data: lastMsgData } = await supabase.from('messages').select('text, file_type, gift, created_at').eq('chat_id', chat.id).order('created_at', { ascending: false }).limit(1).single();
 
         if (lastMsgData) {
           chat.lastMsg = lastMsgData.gift ? `Подарок: ${lastMsgData.gift}` : (lastMsgData.file_type === 'image' ? '📷 Фотография' : lastMsgData.text);
@@ -101,21 +90,12 @@ export default function Home() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
         const newMsg = payload.new;
         if (newMsg.sender_id === currentUser.id || activeChat?.id === newMsg.chat_id) return;
-
         const { data: sender } = await supabase.from('profiles').select('name, avatar_color').eq('id', newMsg.sender_id).single();
-        
         if (sender) {
-          if (audioRef.current) {
-            audioRef.current.currentTime = 0;
-            audioRef.current.play().catch(() => {});
-          }
-          setNotification({
-            chatId: newMsg.chat_id, name: sender.name, avatar_color: sender.avatar_color,
-            text: newMsg.gift ? `Подарок: ${newMsg.gift}` : (newMsg.file_type === 'image' ? '📷 Фотография' : newMsg.text),
-          });
+          if (audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play().catch(() => {}); }
+          setNotification({ chatId: newMsg.chat_id, name: sender.name, avatar_color: sender.avatar_color, text: newMsg.gift ? `Подарок: ${newMsg.gift}` : (newMsg.file_type === 'image' ? '📷 Фотография' : newMsg.text) });
         }
-      })
-      .subscribe();
+      }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, activeChat, supabase]);
 
@@ -142,7 +122,6 @@ export default function Home() {
     const newChatId = crypto.randomUUID();
     const { error: chatError } = await supabase.from('chats').insert({ id: newChatId, type: 'private', avatar_color: otherUser.avatar_color || '#2aabee' });
     if (chatError) { alert("Ошибка: " + chatError.message); return; }
-
     await supabase.from('chat_participants').insert([
       { chat_id: newChatId, user_id: currentUser.id },
       { chat_id: newChatId, user_id: otherUser.id }
@@ -180,17 +159,36 @@ export default function Home() {
         </div>
       </div>
 
-      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} onOpenTheme={() => setShowTheme(true)} />}
+      {/* ПЕРЕДАЕМ onOpenPrivacy В ПРОФИЛЬ И НАСТРОЙКИ */}
+      {showProfile && (
+        <Profile 
+          user={currentUser} 
+          onClose={() => setShowProfile(false)} 
+          onOpenNewChat={() => setShowNewChat(true)} 
+          onOpenSettings={() => setShowSettings(true)} 
+          onOpenCreateChat={() => setShowCreateChat(true)} 
+          onOpenAdmin={() => setShowAdmin(true)} 
+          onOpenTheme={() => setShowTheme(true)} 
+          onOpenPrivacy={() => setShowPrivacy(true)} // <--- Передали в профиль
+        />
+      )}
+      
       {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
       
-      {/* Передаем onOpenPrivacy в настройки */}
-      {showSettings && <SettingsModal currentUser={currentUser} onClose={() => setShowSettings(false)} onUpdate={fetchUser} onOpenPrivacy={() => setShowPrivacy(true)} />}
+      {showSettings && (
+        <SettingsModal 
+          currentUser={currentUser} 
+          onClose={() => setShowSettings(false)} 
+          onUpdate={fetchUser} 
+          onOpenPrivacy={() => setShowPrivacy(true)} // <--- Передали в настройки
+        />
+      )}
       
       {showCreateChat && <CreateChatModal currentUser={currentUser} onClose={() => setShowCreateChat(false)} onCreated={() => { fetchChats(); setShowCreateChat(false); }} />}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       {showTheme && <ThemeSettings onClose={() => setShowTheme(false)} />}
       
-      {/* Рендерим окно конфиденциальности */}
+      {/* ОКНО КОНФИДЕНЦИАЛЬНОСТИ */}
       {showPrivacy && <PrivacySettings onClose={() => setShowPrivacy(false)} />}
     </main>
   );
