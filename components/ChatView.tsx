@@ -4,15 +4,16 @@ import { createClient } from "@/lib/supabase/client";
 import GiftModal from "./GiftModal";
 import ForwardModal from "./ForwardModal";
 import UserProfileModal from "./UserProfileModal";
+import StickerEmojiPicker from "./StickerEmojiPicker"; // <--- Импорт
 
 export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [showGifts, setShowGifts] = useState(false);
+  const [showPicker, setShowPicker] = useState(false); // <--- Стейт для пикера
   const [otherUser, setOtherUser] = useState<any>(null);
   const [profileUser, setProfileUser] = useState<any>(null); 
   
-  // Состояния для действий и загрузки
   const [activeMenuMsg, setActiveMenuMsg] = useState<any>(null);
   const [replyTo, setReplyTo] = useState<any>(null);
   const [editMsg, setEditMsg] = useState<any>(null);
@@ -20,11 +21,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [selectedMsgs, setSelectedMsgs] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   
-  // Состояния для надетых подарков (статусов)
   const [otherWornGift, setOtherWornGift] = useState<any>(null);
-  const [myWornGift, setMyWornGift] = useState<any>(null);
-
-  // Настройки оформления
   const [customBg, setCustomBg] = useState<string | null>(null)
   const [bubbleMe, setBubbleMe] = useState('bg-blue-500')
   const [bubbleOther, setBubbleOther] = useState('bg-white dark:bg-[#182533]')
@@ -33,14 +30,12 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
-  // Загружаем настройки оформления
   useEffect(() => {
     setCustomBg(localStorage.getItem('cosma-chat-bg-image'))
     setBubbleMe(localStorage.getItem('cosma-bubble-me') || 'bg-blue-500')
     setBubbleOther(localStorage.getItem('cosma-bubble-other') || 'bg-white dark:bg-[#182533]')
   }, [])
 
-  // Загружаем собеседника и его надетый подарок
   useEffect(() => {
     const fetchOtherUser = async () => {
       if (chat.type === 'private' || chat.type === 'secret') {
@@ -49,7 +44,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
           const other = participants.find((p: any) => p.user_id !== currentUser.id);
           if (other) {
             setOtherUser(other.profiles);
-            // Если у собеседника надет подарок, подтягиваем его эмодзи
             if (other.profiles.worn_gift_id) {
               const { data: giftData } = await supabase.from('user_gifts').select('*, gift_catalog(emoji)').eq('id', other.profiles.worn_gift_id).single();
               if (giftData) setOtherWornGift(giftData);
@@ -59,16 +53,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       }
     };
     fetchOtherUser();
-
-    // Загружаем свой надетый подарок
-    const fetchMyGift = async () => {
-      if (currentUser.worn_gift_id) {
-        const { data: giftData } = await supabase.from('user_gifts').select('*, gift_catalog(emoji)').eq('id', currentUser.worn_gift_id).single();
-        if (giftData) setMyWornGift(giftData);
-      }
-    };
-    fetchMyGift();
-  }, [chat.id, chat.type, currentUser.id, currentUser.worn_gift_id, supabase]);
+  }, [chat.id, chat.type, currentUser.id, supabase]);
 
   const fetchMessages = async () => {
     const { data } = await supabase
@@ -105,6 +90,16 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       reply_to_id: replyTo ? replyTo.id : null 
     });
     setReplyTo(null);
+    setShowPicker(false);
+  };
+
+  // Отправка стикера (как картинки без пузыря)
+  const sendSticker = async (url: string) => {
+    await supabase.from('messages').insert({ 
+      id: crypto.randomUUID(), chat_id: chat.id, sender_id: currentUser.id, 
+      text: '', file_url: url, file_type: 'sticker' 
+    });
+    setShowPicker(false);
   };
 
   const uploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -123,12 +118,9 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
 
       await supabase.from('messages').insert({
-        id: crypto.randomUUID(), 
-        chat_id: chat.id, 
-        sender_id: currentUser.id,
+        id: crypto.randomUUID(), chat_id: chat.id, sender_id: currentUser.id,
         text: isImage ? '📷 Фотография' : `📎 ${file.name}`,
-        file_url: data.publicUrl, 
-        file_type: isImage ? 'image' : 'file'
+        file_url: data.publicUrl, file_type: isImage ? 'image' : 'file'
       });
       
       fetchMessages();
@@ -173,21 +165,20 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const pinnedMsg = messages.find(m => m.is_pinned);
 
   const openProfile = async (userId: string) => {
-    if (userId === currentUser.id) {
-      setProfileUser(currentUser);
-      return;
-    }
+    if (userId === currentUser.id) { setProfileUser(currentUser); return; }
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) setProfileUser(data);
   };
 
+  const getStatusEmoji = (user: any) => {
+    if (!user?.is_premium) return null;
+    return user.status_emoji || '💎';
+  }
+
   return (
-    <div 
-      className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative bg-cover bg-center"
-      style={customBg ? { backgroundImage: `url(${customBg})` } : {}}
-    >
+    <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative bg-cover bg-center" style={customBg ? { backgroundImage: `url(${customBg})` } : {}}>
       
-      {/* ШАПКА ЧАТА */}
+      {/* ШАПКА */}
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
           <div className="flex-1 flex justify-between items-center px-2">
@@ -200,10 +191,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         ) : (
           <>
             <button onClick={onBack} className="md:hidden p-1 text-2xl text-gray-700 dark:text-white">←</button>
-            <div 
-              className="flex items-center gap-3 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 p-1 rounded-xl transition -ml-1"
-              onClick={() => openProfile(otherUser?.id || chat.id)}
-            >
+            <div className="flex items-center gap-3 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 p-1 rounded-xl transition -ml-1" onClick={() => openProfile(otherUser?.id || chat.id)}>
               <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold relative shrink-0 overflow-hidden" style={{ backgroundColor: otherUser?.avatar_color || chat.avatar_color }}>
                 {otherUser?.avatar_url ? <img src={otherUser.avatar_url} className="w-full h-full object-cover" /> : (otherUser?.name || chat.name)?.[0]?.toUpperCase()}
                 {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-[#17212b] rounded-full" />}
@@ -211,9 +199,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
               <div className="flex flex-col min-w-0">
                 <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">
                   {otherUser?.name || chat.name} 
-                  {/* Отображение надетого подарка собеседника */}
                   {otherWornGift && <span className="text-sm">{otherWornGift.gift_catalog?.emoji}</span>}
-                  {otherUser?.is_premium && '💎'}
+                  {getStatusEmoji(otherUser) && <span>{getStatusEmoji(otherUser)}</span>}
                 </div>
                 <div className={`text-xs truncate ${isOnline ? 'text-blue-600' : 'text-gray-500'}`}>{isOnline ? 'в сети' : 'был(а) недавно'}</div>
               </div>
@@ -230,6 +217,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         </div>
       )}
 
+      {/* СООБЩЕНИЯ */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.map((m) => {
           const isMe = m.sender_id === currentUser.id;
@@ -247,8 +235,21 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   }`}>
                   <div className={`absolute top-2 left-3 text-[10px] uppercase font-bold tracking-widest ${isNFT ? 'text-purple-400' : 'text-yellow-500/70'}`}>{isNFT ? '💎 Уникальный NFT' : 'Подарок'}</div>
                   <div className={`text-6xl my-3 drop-shadow-2xl ${isNFT ? 'animate-pulse' : 'animate-bounce'}`}>{m.gift}</div>
-                  <div className={`text-[15px] font-bold mb-1 ${isNFT ? 'text-purple-300' : 'text-yellow-500'}`}>{m.text.replace('Подарил ', '')}</div>
+                  <div className={`text-[15px] font-bold mb-1 text-center ${isNFT ? 'text-purple-300' : 'text-yellow-500'}`}>{m.text}</div>
                   <div className={`flex items-center justify-end gap-1 text-[11px] w-full ${isMe ? 'text-gray-400' : 'text-gray-500'}`}>{time} {isMe && <span>✓✓</span>}</div>
+                </div>
+              </div>
+            );
+          }
+
+          // РЕНДЕР СТИКЕРА (Без фона)
+          if (m.file_type === 'sticker') {
+            return (
+              <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                <div onMouseDown={() => handlePressStart(m)} onMouseUp={handlePressEnd} onTouchStart={() => handlePressStart(m)} onTouchEnd={handlePressEnd}
+                  className={`relative max-w-[150px] cursor-pointer ${isSelected ? 'ring-4 ring-red-500 rounded-xl' : ''}`}>
+                  <img src={m.file_url} className="w-full h-auto drop-shadow-md" />
+                  <div className={`flex items-center justify-end gap-1 text-[10px] px-1 ${isMe ? 'text-gray-500' : 'text-gray-500'}`}>{time} {isMe && <span>✓✓</span>}</div>
                 </div>
               </div>
             );
@@ -263,17 +264,12 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   (isMe ? `${bubbleMe} text-white rounded-br-sm border-transparent` : `${bubbleOther} text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10`)
                 }`}>
                 
-                {/* Имя отправителя (если это не я) */}
                 {!isMe && (
-                  <div 
-                    className="text-xs font-bold text-blue-500 mb-1 hover:underline cursor-pointer"
-                    onClick={(e) => { e.stopPropagation(); openProfile(m.sender_id); }}
-                  >
-                    {m.profiles?.name} {m.profiles?.is_premium && '💎'}
+                  <div className="text-xs font-bold text-blue-500 mb-1 hover:underline cursor-pointer flex items-center gap-1" onClick={(e) => { e.stopPropagation(); openProfile(m.sender_id); }}>
+                    {m.profiles?.name} {getStatusEmoji(m.profiles)}
                   </div>
                 )}
 
-                {/* Ответ на сообщение */}
                 {m.reply_to && (
                   <div className={`border-l-4 border-blue-400 pl-2 mb-2 py-1 rounded-r-md text-sm ${isMe ? 'bg-black/20' : 'bg-black/5'}`}>
                     <div className="font-bold text-[11px] opacity-80">{m.reply_to.sender_id === currentUser.id ? 'Вы' : m.reply_to.profiles?.name}</div>
@@ -281,20 +277,15 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   </div>
                 )}
 
-                {/* ОТОБРАЖЕНИЕ ФОТО И ФАЙЛОВ */}
-                {m.file_type === 'image' && (
-                  <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover cursor-pointer" onClick={() => window.open(m.file_url, '_blank')} />
-                )}
+                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover cursor-pointer" onClick={() => window.open(m.file_url, '_blank')} />}
                 {m.file_type === 'file' && (
                   <a href={m.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isMe ? 'bg-blue-600/50' : 'bg-black/5 dark:bg-white/10'}`}>
                     <span className="text-2xl">📄</span><span className="text-sm underline truncate">{m.text.replace('📎 ', '')}</span>
                   </a>
                 )}
 
-                {/* Текст */}
                 {!m.file_type && <div className="text-[15px] leading-snug break-words px-1 pb-1">{formatText(m.text)}</div>}
                 
-                {/* Время */}
                 <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-white/70' : 'text-gray-500'}`}>
                   {m.is_pinned && '📌'}{m.is_edited && 'изм.'} {time} {isMe && <span>✓✓</span>}
                 </div>
@@ -312,7 +303,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
             <div className="grid grid-cols-4 gap-2 mb-4">
               <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">↩️</span><span className="text-xs text-black dark:text-white">Ответить</span></button>
               <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">➡️</span><span className="text-xs text-black dark:text-white">Переслать</span></button>
-              {activeMenuMsg.sender_id === currentUser.id && !activeMenuMsg.gift && (
+              {activeMenuMsg.sender_id === currentUser.id && !activeMenuMsg.gift && activeMenuMsg.file_type !== 'sticker' && (
                 <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">✏️</span><span className="text-xs text-black dark:text-white">Изменить</span></button>
               )}
               <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📋</span><span className="text-xs text-black dark:text-white">Копировать</span></button>
@@ -324,8 +315,17 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         </div>
       )}
 
-      {/* --- ПОЛЕ ВВОДА С КНОПКАМИ --- */}
-      <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
+      {/* ПИКЕР ЭМОДЗИ И СТИКЕРОВ */}
+      {showPicker && (
+        <StickerEmojiPicker 
+          currentUser={currentUser} 
+          onSelectEmoji={(emoji: string) => setInput(prev => prev + emoji)} 
+          onSelectSticker={sendSticker}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
+      <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))] relative">
         {replyTo && !editMsg && (
           <div className="flex items-center gap-2 bg-black/5 p-2 rounded-xl border-l-4 border-blue-500">
             <div className="flex-1 min-w-0"><div className="text-xs font-bold text-blue-500">Ответ: {replyTo.profiles?.name}</div><div className="text-sm truncate text-black dark:text-white">{replyTo.text}</div></div>
@@ -340,19 +340,17 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         )}
         
         <div className="flex items-end gap-2">
-          {/* СКРЫТЫЙ ИНПУТ И КНОПКА СКРЕПКИ */}
           <input type="file" ref={fileInputRef} onChange={uploadFile} className="hidden" accept="image/*,application/pdf,.doc,.docx,.zip" />
-          <button 
-            onClick={() => fileInputRef.current?.click()} 
-            disabled={uploading} 
-            className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl hover:bg-black/10 transition"
-          >
-            {uploading ? '⏳' : '📎'}
-          </button>
+          
+          {/* Кнопка эмодзи */}
+          <button onClick={() => setShowPicker(!showPicker)} className={`p-3 rounded-full shrink-0 text-xl transition ${showPicker ? 'bg-blue-500/20 text-blue-500' : 'bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-black/10'}`}>😊</button>
+          
+          <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl hover:bg-black/10 transition">{uploading ? '⏳' : '📎'}</button>
           
           <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-xl">🎁</button>
           
           <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" />
+          
           <button onClick={sendMessage} className={`p-3 rounded-full text-white shrink-0 transition shadow-lg ${editMsg ? 'bg-green-500' : 'bg-blue-500'}`}>{editMsg ? '✓' : '➤'}</button>
         </div>
       </div>
