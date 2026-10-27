@@ -22,25 +22,22 @@ export default function UserProfileModal({ user, currentUser, onClose, onSendMes
         onClick={e => e.stopPropagation()}
       >
         
-        {/* Шапка профиля с градиентом */}
         <div className={`relative h-32 flex items-end justify-center ${user.is_premium ? 'bg-gradient-to-r from-purple-500 to-blue-500' : 'bg-gradient-to-r from-blue-400 to-teal-400'}`}>
           <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-black/20 text-white rounded-full hover:bg-black/40 transition">
             ✕
           </button>
           
-          {/* Аватарка */}
           <div className="absolute -bottom-12 w-24 h-24 rounded-full border-4 border-white dark:border-[#17212b] shadow-xl overflow-hidden bg-gray-200">
-            {user.avatar_url ? (
+            {user.avatar_url && user.privacy_settings?.profile_photo !== 'nobody' ? (
               <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-white" style={{ backgroundColor: user.avatar_color || '#2aabee' }}>
-                {user.name?.[0]?.toUpperCase()}
+                {user.privacy_settings?.profile_photo === 'nobody' ? '👤' : user.name?.[0]?.toUpperCase()}
               </div>
             )}
           </div>
         </div>
 
-        {/* Информация */}
         <div className="pt-16 px-6 pb-6 flex flex-col items-center text-center overflow-y-auto">
           <h2 className="text-2xl font-bold text-black dark:text-white flex items-center gap-2">
             {user.name} {user.status_emoji && <span>{user.status_emoji}</span>}
@@ -49,16 +46,14 @@ export default function UserProfileModal({ user, currentUser, onClose, onSendMes
           
           <p className="text-blue-500 font-medium mt-1">@{user.username || 'username'}</p>
           
-          {user.phone && (
+          {user.phone && user.privacy_settings?.phone !== 'nobody' && (
             <p className="text-sm text-gray-500 mt-1">{user.phone}</p>
           )}
 
-          {/* Статус */}
           <p className="text-xs text-gray-400 mt-2">
             {user.last_seen ? `Был(а) в сети: ${new Date(user.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Недавно'}
           </p>
 
-          {/* Кнопки действий */}
           {!isMe && (
             <div className="flex gap-3 mt-6 w-full max-w-xs">
               <button 
@@ -81,7 +76,6 @@ export default function UserProfileModal({ user, currentUser, onClose, onSendMes
              </div>
           )}
 
-          {/* Коллекция подарков */}
           {gifts.length > 0 && (
             <div className="w-full mt-8 text-left">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Коллекция NFT-подарков</h3>
@@ -96,12 +90,10 @@ export default function UserProfileModal({ user, currentUser, onClose, onSendMes
             </div>
           )}
 
-          {/* Инфо о себе */}
           <div className="w-full mt-6 bg-gray-50 dark:bg-white/5 rounded-2xl p-4 text-left">
             <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">О себе</p>
             <p className="text-sm text-gray-600 dark:text-gray-400">Люблю Cosma и NFT-подарки 🚀</p>
           </div>
-
         </div>
       </div>
     </div>
