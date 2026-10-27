@@ -26,7 +26,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
   const [bubbleMe, setBubbleMe] = useState('bg-blue-500')
   const [bubbleOther, setBubbleOther] = useState('bg-white dark:bg-[#182533]')
 
-  // --- СОСТОЯНИЯ ДЛЯ ЗАПИСИ ГОЛОСА/ВИДЕО ---
+  // --- ЗАПИСЬ ГОЛОСА/ВИДЕО ---
   const [recordingMode, setRecordingMode] = useState<'voice' | 'video_note' | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -112,7 +112,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
     setShowPicker(false);
   };
 
-  // --- ЛОГИКА ЗАПИСИ ГОЛОСА И ВИДЕО ---
   const startRecording = async (mode: 'voice' | 'video_note') => {
     try {
       setRecordingMode(mode);
@@ -127,7 +126,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
       
       if (mode === 'video_note') {
         setVideoStream(stream);
-        // Ждем немного, чтобы элемент video отрендерился
         setTimeout(() => {
           if (videoPreviewRef.current) {
             videoPreviewRef.current.srcObject = stream;
@@ -144,14 +142,13 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
 
       mediaRecorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: mode === 'voice' ? 'audio/webm' : 'video/webm' });
-        stream.getTracks().forEach(track => track.stop()); // Выключаем камеру/микрофон
+        stream.getTracks().forEach(track => track.stop());
         setVideoStream(null);
         setRecordingMode(null);
         setIsRecording(false);
 
-        if (blob.size < 100) return; // Если запись пустая
+        if (blob.size < 100) return;
 
-        // Загружаем в Storage
         setUploading(true);
         const filePath = `${chat.id}/${crypto.randomUUID()}.webm`;
         
@@ -174,7 +171,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
       timerRef.current = setInterval(() => {
         setRecordingTime(prev => {
           if (prev >= 15 && mode === 'video_note') {
-            stopRecording(); // Автостоп для кружочков на 15 сек
+            stopRecording();
             return 15;
           }
           return prev + 1;
@@ -196,7 +193,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
 
   const cancelRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.onstop = null; // Отменяем отправку
+      mediaRecorderRef.current.onstop = null;
       mediaRecorderRef.current.stop();
     }
     if (videoStream) videoStream.getTracks().forEach(track => track.stop());
@@ -206,7 +203,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
     setVideoStream(null);
   };
 
-  // --- ОСТАЛЬНЫЕ ФУНКЦИИ ---
   const uploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setUploading(true);
@@ -324,7 +320,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
       {recordingMode === 'video_note' && (
         <div className="absolute inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center">
           <div className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-blue-500 shadow-[0_0_50px_rgba(59,130,246,0.5)]">
-            <video ref={videoPreviewRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            {/* Применяем scaleX(-1), чтобы превью было как зеркало */}
+            <video ref={videoPreviewRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
             <div className="absolute bottom-4 left-0 right-0 text-center text-white font-bold text-xl drop-shadow-md">
               {formatTime(recordingTime)} / 0:15
             </div>
@@ -343,9 +340,24 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
           const isSelected = selectedMsgs.includes(m.id);
           const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           
-          if (m.gift) { /* Блок подарка */ }
+          if (m.gift) {
+            const isNFT = ['🦄', '🛸', '🏆', '💎', '🐉'].includes(m.gift);
+            return (
+              <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                <div onMouseDown={() => handlePressStart(m)} onMouseUp={handlePressEnd} onTouchStart={() => handlePressStart(m)} onTouchEnd={handlePressEnd}
+                  className={`relative flex flex-col items-center justify-center p-4 min-w-[160px] rounded-3xl shadow-xl border cursor-pointer select-none transition-all ${
+                    isSelected ? 'border-red-500 bg-red-500/20' : 
+                    isNFT ? 'bg-gradient-to-br from-purple-900 to-black border-purple-500/50 shadow-[0_0_20px_rgba(168,85,247,0.4)]' : (isMe ? 'rounded-br-sm bg-gradient-to-br from-[#2b3c4f] to-[#1a2530] border-yellow-500/30' : 'rounded-bl-sm bg-gradient-to-br from-white/90 to-gray-100 dark:from-[#182533]/90 dark:to-[#111a24] border-white/20 dark:border-yellow-500/20')
+                  }`}>
+                  <div className={`absolute top-2 left-3 text-[10px] uppercase font-bold tracking-widest ${isNFT ? 'text-purple-400' : 'text-yellow-500/70'}`}>{isNFT ? '💎 Уникальный NFT' : 'Подарок'}</div>
+                  <div className={`text-6xl my-3 drop-shadow-2xl ${isNFT ? 'animate-pulse' : 'animate-bounce'}`}>{m.gift}</div>
+                  <div className={`text-[15px] font-bold mb-1 text-center ${isNFT ? 'text-purple-300' : 'text-yellow-500'}`}>{m.text}</div>
+                  <div className={`flex items-center justify-end gap-1 text-[11px] w-full ${isMe ? 'text-gray-400' : 'text-gray-500'}`}>{time} {isMe && <span>✓✓</span>}</div>
+                </div>
+              </div>
+            );
+          }
 
-          // РЕНДЕР СТИКЕРА
           if (m.file_type === 'sticker') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
@@ -358,7 +370,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
-          // РЕНДЕР ГОЛОСОВОГО
           if (m.file_type === 'voice') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
@@ -379,13 +390,14 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
-          // РЕНДЕР КРУЖОЧКА
+          // РЕНДЕР КРУЖОЧКА (С ФИКСОМ ЗЕРКАЛЬНОСТИ)
           if (m.file_type === 'video_note') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                 <div onMouseDown={() => handlePressStart(m)} onMouseUp={handlePressEnd} onTouchStart={() => handlePressStart(m)} onTouchEnd={handlePressEnd}
                   className={`relative w-40 h-40 rounded-full overflow-hidden shadow-lg cursor-pointer border-2 ${isMe ? 'border-blue-400' : 'border-gray-300'}`}>
-                  <video src={m.file_url} className="w-full h-full object-cover" controls playsInline />
+                  {/* Добавлен style transform: scaleX(-1), чтобы перевернуть видео в нормальное положение */}
+                  <video src={m.file_url} className="w-full h-full object-cover" controls playsInline style={{ transform: 'scaleX(-1)' }} />
                   <div className={`absolute bottom-2 left-0 right-0 text-center text-[10px] text-white font-bold drop-shadow-md`}>{time}</div>
                 </div>
               </div>
@@ -426,10 +438,37 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         <div ref={endRef} />
       </div>
 
-      {/* ПАНЕЛЬ ВВОДА */}
-      <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))] relative">
+      {activeMenuMsg && (
+        <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
+          <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4"></div>
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">↩️</span><span className="text-xs text-black dark:text-white">Ответить</span></button>
+              <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">➡️</span><span className="text-xs text-black dark:text-white">Переслать</span></button>
+              {activeMenuMsg.sender_id === currentUser.id && !activeMenuMsg.gift && activeMenuMsg.file_type !== 'sticker' && activeMenuMsg.file_type !== 'video_note' && activeMenuMsg.file_type !== 'voice' && (
+                <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">✏️</span><span className="text-xs text-black dark:text-white">Изменить</span></button>
+              )}
+              <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📋</span><span className="text-xs text-black dark:text-white">Копировать</span></button>
+              <button onClick={() => pinMessage(activeMenuMsg)} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📌</span><span className="text-xs text-black dark:text-white">{activeMenuMsg.is_pinned ? 'Открепить' : 'Закрепить'}</span></button>
+              <button onClick={() => deleteMessage(activeMenuMsg.id)} className="flex flex-col items-center p-2 hover:bg-red-50 rounded-xl text-red-500"><span className="text-2xl mb-1">🗑</span><span className="text-xs">Удалить</span></button>
+            </div>
+            <button onClick={() => setActiveMenuMsg(null)} className="w-full py-3 bg-gray-100 dark:bg-white/5 rounded-xl font-medium text-black dark:text-white">Отмена</button>
+          </div>
+        </div>
+      )}
+
+      {showPicker && (
+        <StickerEmojiPicker 
+          currentUser={currentUser} 
+          onSelectEmoji={(emoji: string) => setInput(prev => prev + emoji)} 
+          onSelectSticker={sendSticker}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
+      {/* ПАНЕЛЬ ВВОДА С УМЕНЬШЕННЫМИ КНОПКАМИ */}
+      <div className="p-2 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))] relative">
         
-        {/* Если идет запись голоса */}
         {recordingMode === 'voice' && isRecording ? (
            <div className="flex items-center justify-between w-full h-12 px-4 bg-red-500/10 rounded-2xl">
              <span className="text-red-500 font-bold animate-pulse">● Идет запись... {formatTime(recordingTime)}</span>
@@ -439,26 +478,28 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
              </div>
            </div>
         ) : (
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-1">
             <input type="file" ref={fileInputRef} onChange={uploadFile} className="hidden" accept="image/*,application/pdf,.doc,.docx,.zip" />
             
-            {/* Показываем кнопки записи, только если поле пустое */}
+            {/* Левая группа кнопок */}
+            <button onClick={() => setShowPicker(!showPicker)} className={`p-2.5 rounded-full shrink-0 text-lg transition ${showPicker ? 'bg-blue-500/20 text-blue-500' : 'bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-black/10'}`}>😊</button>
+            
+            <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-lg hover:bg-black/10 transition">{uploading ? '⏳' : '📎'}</button>
+            
+            <button onClick={() => setShowGifts(true)} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-lg">🎁</button>
+            
+            {/* Поле ввода (увеличено) */}
+            <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-3xl px-4 py-3 min-h-[44px] outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" />
+            
+            {/* Правая кнопка (микрофон/видео или отправить) */}
             {!input.trim() ? (
-              <>
-                <button onClick={() => startRecording('video_note')} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-blue-500 shrink-0 text-xl">📹</button>
-                <button onClick={() => startRecording('voice')} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-blue-500 shrink-0 text-xl">🎤</button>
-              </>
-            ) : null}
-
-            <button onClick={() => setShowPicker(!showPicker)} className={`p-3 rounded-full shrink-0 text-xl transition ${showPicker ? 'bg-blue-500/20 text-blue-500' : 'bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300'}`}>😊</button>
-            
-            <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl">{uploading ? '⏳' : '📎'}</button>
-            
-            <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-xl">🎁</button>
-            
-            <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" />
-            
-            <button onClick={sendMessage} disabled={!input.trim()} className={`p-3 rounded-full text-white shrink-0 transition shadow-lg ${editMsg ? 'bg-green-500' : 'bg-blue-500'}`}>{editMsg ? '✓' : '➤'}</button>
+              <div className="flex shrink-0">
+                <button onClick={() => startRecording('voice')} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-blue-500 text-lg mr-1">🎤</button>
+                <button onClick={() => startRecording('video_note')} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-blue-500 text-lg">📹</button>
+              </div>
+            ) : (
+              <button onClick={sendMessage} className={`p-2.5 rounded-full text-white shrink-0 transition shadow-lg ${editMsg ? 'bg-green-500' : 'bg-blue-500'}`}>➤</button>
+            )}
           </div>
         )}
       </div>
