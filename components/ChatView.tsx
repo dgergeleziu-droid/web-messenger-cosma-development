@@ -4,13 +4,13 @@ import { createClient } from "@/lib/supabase/client";
 import GiftModal from "./GiftModal";
 import ForwardModal from "./ForwardModal";
 import UserProfileModal from "./UserProfileModal";
-import StickerEmojiPicker from "./StickerEmojiPicker"; // <--- Импорт
+import StickerEmojiPicker from "./StickerEmojiPicker";
 
-export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
+export default function ChatView({ chat, currentUser, onBack, allChats, onUpdateUser }: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [showGifts, setShowGifts] = useState(false);
-  const [showPicker, setShowPicker] = useState(false); // <--- Стейт для пикера
+  const [showPicker, setShowPicker] = useState(false);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [profileUser, setProfileUser] = useState<any>(null); 
   
@@ -93,7 +93,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     setShowPicker(false);
   };
 
-  // Отправка стикера (как картинки без пузыря)
   const sendSticker = async (url: string) => {
     await supabase.from('messages').insert({ 
       id: crypto.randomUUID(), chat_id: chat.id, sender_id: currentUser.id, 
@@ -178,7 +177,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   return (
     <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative bg-cover bg-center" style={customBg ? { backgroundImage: `url(${customBg})` } : {}}>
       
-      {/* ШАПКА */}
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
           <div className="flex-1 flex justify-between items-center px-2">
@@ -217,7 +215,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         </div>
       )}
 
-      {/* СООБЩЕНИЯ */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.map((m) => {
           const isMe = m.sender_id === currentUser.id;
@@ -242,7 +239,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
             );
           }
 
-          // РЕНДЕР СТИКЕРА (Без фона)
           if (m.file_type === 'sticker') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
@@ -315,7 +311,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         </div>
       )}
 
-      {/* ПИКЕР ЭМОДЗИ И СТИКЕРОВ */}
       {showPicker && (
         <StickerEmojiPicker 
           currentUser={currentUser} 
@@ -342,7 +337,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         <div className="flex items-end gap-2">
           <input type="file" ref={fileInputRef} onChange={uploadFile} className="hidden" accept="image/*,application/pdf,.doc,.docx,.zip" />
           
-          {/* Кнопка эмодзи */}
           <button onClick={() => setShowPicker(!showPicker)} className={`p-3 rounded-full shrink-0 text-xl transition ${showPicker ? 'bg-blue-500/20 text-blue-500' : 'bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-black/10'}`}>😊</button>
           
           <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl hover:bg-black/10 transition">{uploading ? '⏳' : '📎'}</button>
@@ -355,7 +349,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         </div>
       </div>
 
-      {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} receiverId={otherUser?.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} />}
+      {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} receiverId={otherUser?.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} onUpdateUser={onUpdateUser} />}
       {forwardMsg && <ForwardModal chats={allChats} currentUser={currentUser} messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} onForwarded={fetchMessages} />}
       {profileUser && <UserProfileModal user={profileUser} currentUser={currentUser} onClose={() => setProfileUser(null)} onSendMessage={() => {}} />}
     </div>
