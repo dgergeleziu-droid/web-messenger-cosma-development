@@ -18,35 +18,57 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [editMsg, setEditMsg] = useState<any>(null);
   const [forwardMsg, setForwardMsg] = useState<any>(null);
   const [selectedMsgs, setSelectedMsgs] = useState<string[]>([]);
-  const [uploading, setUploading] = useState(false); // <--- ВЕРНУЛИ СТЕЙТ ЗАГРУЗКИ
+  const [uploading, setUploading] = useState(false);
   
+  // Состояния для надетых подарков (статусов)
+  const [otherWornGift, setOtherWornGift] = useState<any>(null);
+  const [myWornGift, setMyWornGift] = useState<any>(null);
+
   // Настройки оформления
   const [customBg, setCustomBg] = useState<string | null>(null)
   const [bubbleMe, setBubbleMe] = useState('bg-blue-500')
   const [bubbleOther, setBubbleOther] = useState('bg-white dark:bg-[#182533]')
 
   const endRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null); // <--- ВЕРНУЛИ РЕФ ДЛЯ ФАЙЛА
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
+  // Загружаем настройки оформления
   useEffect(() => {
     setCustomBg(localStorage.getItem('cosma-chat-bg-image'))
     setBubbleMe(localStorage.getItem('cosma-bubble-me') || 'bg-blue-500')
     setBubbleOther(localStorage.getItem('cosma-bubble-other') || 'bg-white dark:bg-[#182533]')
   }, [])
 
+  // Загружаем собеседника и его надетый подарок
   useEffect(() => {
     const fetchOtherUser = async () => {
       if (chat.type === 'private' || chat.type === 'secret') {
         const { data: participants } = await supabase.from('chat_participants').select('user_id, profiles(*)').eq('chat_id', chat.id);
         if (participants) {
           const other = participants.find((p: any) => p.user_id !== currentUser.id);
-          if (other) setOtherUser(other.profiles);
+          if (other) {
+            setOtherUser(other.profiles);
+            // Если у собеседника надет подарок, подтягиваем его эмодзи
+            if (other.profiles.worn_gift_id) {
+              const { data: giftData } = await supabase.from('user_gifts').select('*, gift_catalog(emoji)').eq('id', other.profiles.worn_gift_id).single();
+              if (giftData) setOtherWornGift(giftData);
+            }
+          }
         }
       }
     };
     fetchOtherUser();
-  }, [chat.id, chat.type, currentUser.id, supabase]);
+
+    // Загружаем свой надетый подарок
+    const fetchMyGift = async () => {
+      if (currentUser.worn_gift_id) {
+        const { data: giftData } = await supabase.from('user_gifts').select('*, gift_catalog(emoji)').eq('id', currentUser.worn_gift_id).single();
+        if (giftData) setMyWornGift(giftData);
+      }
+    };
+    fetchMyGift();
+  }, [chat.id, chat.type, currentUser.id, currentUser.worn_gift_id, supabase]);
 
   const fetchMessages = async () => {
     const { data } = await supabase
@@ -85,7 +107,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     setReplyTo(null);
   };
 
-  // ВЕРНУЛИ ФУНКЦИЮ ЗАГРУЗКИ ФАЙЛОВ
   const uploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setUploading(true);
@@ -96,14 +117,11 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       const filePath = `${chat.id}/${crypto.randomUUID()}.${fileExt}`;
       const isImage = file.type.startsWith('image/');
 
-      // Загружаем в Supabase Storage
       const { error: uploadError } = await supabase.storage.from('chat_media').upload(filePath, file);
       if (uploadError) throw uploadError;
 
-      // Получаем публичную ссылку
       const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
 
-      // Отправляем сообщение с файлом в базу
       await supabase.from('messages').insert({
         id: crypto.randomUUID(), 
         chat_id: chat.id, 
@@ -192,7 +210,10 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
               </div>
               <div className="flex flex-col min-w-0">
                 <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">
-                  {otherUser?.name || chat.name} {otherUser?.is_premium && '💎'}
+                  {otherUser?.name || chat.name} 
+                  {/* Отображение надетого подарка собеседника */}
+                  {otherWornGift && <span className="text-sm">{otherWornGift.gift_catalog?.emoji}</span>}
+                  {otherUser?.is_premium && '💎'}
                 </div>
                 <div className={`text-xs truncate ${isOnline ? 'text-blue-600' : 'text-gray-500'}`}>{isOnline ? 'в сети' : 'был(а) недавно'}</div>
               </div>
@@ -242,7 +263,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   (isMe ? `${bubbleMe} text-white rounded-br-sm border-transparent` : `${bubbleOther} text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10`)
                 }`}>
                 
-                {/* Имя отправителя */}
+                {/* Имя отправителя (если это не я) */}
                 {!isMe && (
                   <div 
                     className="text-xs font-bold text-blue-500 mb-1 hover:underline cursor-pointer"
