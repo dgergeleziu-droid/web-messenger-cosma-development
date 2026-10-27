@@ -25,7 +25,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
   const [bubbleMe, setBubbleMe] = useState('bg-blue-500')
   const [bubbleOther, setBubbleOther] = useState('bg-white dark:bg-[#182533]')
 
-  // --- ЗАПИСЬ ГОЛОСА/ВИДЕО ---
   const [recordingMode, setRecordingMode] = useState<'voice' | 'video_note' | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -157,7 +156,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         
         const { error } = await supabase.storage.from('chat_media').upload(filePath, blob);
         if (!error) {
-          const { data } = await supabase.storage.from('chat_media').getPublicUrl(filePath);
+          const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
           await supabase.from('messages').insert({
             id: crypto.randomUUID(), chat_id: chat.id, sender_id: currentUser.id,
             text: mode === 'voice' ? 'Голосовое сообщение' : 'Видеосообщение',
@@ -286,10 +285,9 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
   }
 
   return (
-    // ГЛАВНЫЙ ФИКС: Жесткая высота + overflow-hidden
-    <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] overflow-hidden relative">
+    <div className="flex flex-col w-full h-full bg-[#e6ebee] dark:bg-[#0e1621] overflow-hidden relative">
       
-      {/* 1. ШАПКА */}
+      {/* ШАПКА */}
       <div className="flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
           <div className="flex-1 flex justify-between items-center px-2">
@@ -320,7 +318,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         )}
       </div>
 
-      {/* 2. ЗАКРЕПЛЕННОЕ */}
+      {/* ЗАКРЕПЛЕННОЕ */}
       {pinnedMsg && (
         <div className="bg-white/90 dark:bg-[#17212b]/95 px-3 py-2 border-b flex items-center gap-3 shrink-0 z-30">
           <div className="w-1 h-8 bg-blue-500 rounded-full" />
@@ -329,7 +327,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       )}
 
-      {/* 3. ЛЕНТА СООБЩЕНИЙ */}
+      {/* ЛЕНТА СООБЩЕНИЙ */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center text-gray-500">Нет сообщений. Напишите первое!</div>
@@ -370,7 +368,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
-          // ГОЛОСОВОЕ (сломанное, как ты и просил)
           if (m.file_type === 'voice') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
@@ -390,18 +387,11 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
-          // КРУЖОЧЕК С КАСТОМНЫМ ПЛЕЕРОМ
           if (m.file_type === 'video_note') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                 <div className={`relative w-48 h-48 rounded-full overflow-hidden shadow-lg border-2 bg-black ${isMe ? 'border-blue-400' : 'border-gray-300'}`}>
-                  <video 
-                    src={m.file_url} 
-                    className="w-full h-full object-cover" 
-                    playsInline
-                    loop 
-                    style={{ transform: 'scaleX(-1)' }}
-                  />
+                  <video src={m.file_url} className="w-full h-full object-cover" playsInline loop style={{ transform: 'scaleX(-1)' }} />
                   <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                     <button 
                       onClick={(e) => {
@@ -450,7 +440,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         <div ref={endRef} />
       </div>
 
-      {/* 4. ПАНЕЛЬ ВВОДА */}
+      {/* ПАНЕЛЬ ВВОДА */}
       <div className="p-2 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         {replyTo && !editMsg && (
           <div className="flex items-center gap-2 bg-black/5 p-2 rounded-xl border-l-4 border-blue-500">
@@ -481,7 +471,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       </div>
 
-      {/* 5. МОДАЛКИ (fixed, чтобы не ломать flex) */}
+      {/* МОДАЛКИ */}
       {activeMenuMsg && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
