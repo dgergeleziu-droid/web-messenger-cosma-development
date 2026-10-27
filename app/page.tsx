@@ -9,7 +9,7 @@ import CreateChatModal from "../components/CreateChatModal";
 import AdminPanel from "../components/AdminPanel";
 import NotificationToast from "../components/NotificationToast";
 import ThemeSettings from "../components/ThemeSettings";
-import PrivacySettings from "../components/PrivacySettings";
+import PrivacySettings from "../components/PrivacySettings"; // <-- Импорт
 import { createClient } from '@/lib/supabase/client'
 
 export default function Home() {
@@ -23,7 +23,7 @@ export default function Home() {
   const [showCreateChat, setShowCreateChat] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
-  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false); // <-- Новый стейт
 
   const [notification, setNotification] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -180,13 +180,18 @@ export default function Home() {
         </div>
       </div>
 
-      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} onOpenTheme={() => setShowTheme(true)} onOpenPrivacy={() => setShowPrivacy(true)} />}
+      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} onOpenTheme={() => setShowTheme(true)} />}
       {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
-      {showSettings && <SettingsModal currentUser={currentUser} onClose={() => setShowSettings(false)} onUpdate={fetchUser} />}
+      
+      {/* Передаем onOpenPrivacy в настройки */}
+      {showSettings && <SettingsModal currentUser={currentUser} onClose={() => setShowSettings(false)} onUpdate={fetchUser} onOpenPrivacy={() => setShowPrivacy(true)} />}
+      
       {showCreateChat && <CreateChatModal currentUser={currentUser} onClose={() => setShowCreateChat(false)} onCreated={() => { fetchChats(); setShowCreateChat(false); }} />}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       {showTheme && <ThemeSettings onClose={() => setShowTheme(false)} />}
-      {showPrivacy && <PrivacySettings currentUser={currentUser} onClose={() => setShowPrivacy(false)} onUpdate={fetchUser} />}
+      
+      {/* Рендерим окно конфиденциальности */}
+      {showPrivacy && <PrivacySettings onClose={() => setShowPrivacy(false)} />}
     </main>
   );
 }
