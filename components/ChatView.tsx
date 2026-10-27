@@ -10,7 +10,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [input, setInput] = useState("");
   const [showGifts, setShowGifts] = useState(false);
   const [otherUser, setOtherUser] = useState<any>(null);
-  const [profileUser, setProfileUser] = useState<any>(null); // Стейт для профиля
+  const [profileUser, setProfileUser] = useState<any>(null);
   
   const [activeMenuMsg, setActiveMenuMsg] = useState<any>(null);
   const [replyTo, setReplyTo] = useState<any>(null);
@@ -110,18 +110,15 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const handlePressStart = (msg: any) => { if (selectedMsgs.length === 0) pressTimer = setTimeout(() => setActiveMenuMsg(msg), 500); };
   const handlePressEnd = () => clearTimeout(pressTimer);
 
-  const isOnline = otherUser?.last_seen ? (new Date().getTime() - new Date(otherUser.last_seen).getTime()) < 120000 : false;
-  const pinnedMsg = messages.find(m => m.is_pinned);
-
-  // Загрузка полного профиля при клике
   const openProfile = async (userId: string) => {
-    if (userId === currentUser.id) {
-      setProfileUser(currentUser);
-      return;
-    }
+    if (userId === currentUser.id) { setProfileUser(currentUser); return; }
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) setProfileUser(data);
   };
+
+  const canShowLastSeen = otherUser?.privacy_settings?.last_seen !== 'nobody';
+  const isOnline = canShowLastSeen && otherUser?.last_seen ? (new Date().getTime() - new Date(otherUser.last_seen).getTime()) < 120000 : false;
+  const pinnedMsg = messages.find(m => m.is_pinned);
 
   return (
     <div 
@@ -129,7 +126,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       style={customBg ? { backgroundImage: `url(${customBg})` } : {}}
     >
       
-      {/* ШАПКА ЧАТА (Кликабельная) */}
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
           <div className="flex-1 flex justify-between items-center px-2">
@@ -154,7 +150,9 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                 <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">
                   {otherUser?.name || chat.name} {otherUser?.is_premium && '💎'}
                 </div>
-                <div className={`text-xs truncate ${isOnline ? 'text-blue-600' : 'text-gray-500'}`}>{isOnline ? 'в сети' : 'был(а) недавно'}</div>
+                <div className={`text-xs truncate ${isOnline ? 'text-blue-600' : 'text-gray-500'}`}>
+                  {!canShowLastSeen ? 'был(а) недавно' : (isOnline ? 'в сети' : 'был(а) недавно')}
+                </div>
               </div>
             </div>
           </>
@@ -202,7 +200,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   (isMe ? `${bubbleMe} text-white rounded-br-sm border-transparent` : `${bubbleOther} text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10`)
                 }`}>
                 
-                {/* Клик по имени в сообщении открывает профиль */}
                 {!isMe && (
                   <div 
                     className="text-xs font-bold text-blue-500 mb-1 hover:underline cursor-pointer"
@@ -269,8 +266,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
 
       {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} receiverId={otherUser?.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} />}
       {forwardMsg && <ForwardModal chats={allChats} currentUser={currentUser} messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} onForwarded={fetchMessages} />}
-      
-      {/* Модалка профиля */}
       {profileUser && <UserProfileModal user={profileUser} currentUser={currentUser} onClose={() => setProfileUser(null)} onSendMessage={() => {}} />}
     </div>
   );
