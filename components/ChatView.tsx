@@ -10,19 +10,23 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [input, setInput] = useState("");
   const [showGifts, setShowGifts] = useState(false);
   const [otherUser, setOtherUser] = useState<any>(null);
-  const [profileUser, setProfileUser] = useState<any>(null);
+  const [profileUser, setProfileUser] = useState<any>(null); 
   
+  // Состояния для действий и загрузки
   const [activeMenuMsg, setActiveMenuMsg] = useState<any>(null);
   const [replyTo, setReplyTo] = useState<any>(null);
   const [editMsg, setEditMsg] = useState<any>(null);
   const [forwardMsg, setForwardMsg] = useState<any>(null);
   const [selectedMsgs, setSelectedMsgs] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false); // <--- ВЕРНУЛИ СТЕЙТ ЗАГРУЗКИ
   
+  // Настройки оформления
   const [customBg, setCustomBg] = useState<string | null>(null)
   const [bubbleMe, setBubbleMe] = useState('bg-blue-500')
   const [bubbleOther, setBubbleOther] = useState('bg-white dark:bg-[#182533]')
 
   const endRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null); // <--- ВЕРНУЛИ РЕФ ДЛЯ ФАЙЛА
   const supabase = createClient();
 
   useEffect(() => {
@@ -81,6 +85,43 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     setReplyTo(null);
   };
 
+  // ВЕРНУЛИ ФУНКЦИЮ ЗАГРУЗКИ ФАЙЛОВ
+  const uploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      if (!event.target.files || event.target.files.length === 0) return;
+      
+      const file = event.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${chat.id}/${crypto.randomUUID()}.${fileExt}`;
+      const isImage = file.type.startsWith('image/');
+
+      // Загружаем в Supabase Storage
+      const { error: uploadError } = await supabase.storage.from('chat_media').upload(filePath, file);
+      if (uploadError) throw uploadError;
+
+      // Получаем публичную ссылку
+      const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
+
+      // Отправляем сообщение с файлом в базу
+      await supabase.from('messages').insert({
+        id: crypto.randomUUID(), 
+        chat_id: chat.id, 
+        sender_id: currentUser.id,
+        text: isImage ? '📷 Фотография' : `📎 ${file.name}`,
+        file_url: data.publicUrl, 
+        file_type: isImage ? 'image' : 'file'
+      });
+      
+      fetchMessages();
+    } catch (error: any) {
+      alert('Ошибка при загрузке файла: ' + error.message);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const deleteMessage = async (msgId: string) => {
     setActiveMenuMsg(null);
     setMessages(prev => prev.filter(m => m.id !== msgId));
@@ -110,15 +151,17 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const handlePressStart = (msg: any) => { if (selectedMsgs.length === 0) pressTimer = setTimeout(() => setActiveMenuMsg(msg), 500); };
   const handlePressEnd = () => clearTimeout(pressTimer);
 
+  const isOnline = otherUser?.last_seen ? (new Date().getTime() - new Date(otherUser.last_seen).getTime()) < 120000 : false;
+  const pinnedMsg = messages.find(m => m.is_pinned);
+
   const openProfile = async (userId: string) => {
-    if (userId === currentUser.id) { setProfileUser(currentUser); return; }
+    if (userId === currentUser.id) {
+      setProfileUser(currentUser);
+      return;
+    }
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) setProfileUser(data);
   };
-
-  const canShowLastSeen = otherUser?.privacy_settings?.last_seen !== 'nobody';
-  const isOnline = canShowLastSeen && otherUser?.last_seen ? (new Date().getTime() - new Date(otherUser.last_seen).getTime()) < 120000 : false;
-  const pinnedMsg = messages.find(m => m.is_pinned);
 
   return (
     <div 
@@ -126,6 +169,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       style={customBg ? { backgroundImage: `url(${customBg})` } : {}}
     >
       
+      {/* ШАПКА ЧАТА */}
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
           <div className="flex-1 flex justify-between items-center px-2">
@@ -150,9 +194,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                 <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">
                   {otherUser?.name || chat.name} {otherUser?.is_premium && '💎'}
                 </div>
-                <div className={`text-xs truncate ${isOnline ? 'text-blue-600' : 'text-gray-500'}`}>
-                  {!canShowLastSeen ? 'был(а) недавно' : (isOnline ? 'в сети' : 'был(а) недавно')}
-                </div>
+                <div className={`text-xs truncate ${isOnline ? 'text-blue-600' : 'text-gray-500'}`}>{isOnline ? 'в сети' : 'был(а) недавно'}</div>
               </div>
             </div>
           </>
@@ -200,6 +242,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   (isMe ? `${bubbleMe} text-white rounded-br-sm border-transparent` : `${bubbleOther} text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10`)
                 }`}>
                 
+                {/* Имя отправителя */}
                 {!isMe && (
                   <div 
                     className="text-xs font-bold text-blue-500 mb-1 hover:underline cursor-pointer"
@@ -209,15 +252,31 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   </div>
                 )}
 
+                {/* Ответ на сообщение */}
                 {m.reply_to && (
                   <div className={`border-l-4 border-blue-400 pl-2 mb-2 py-1 rounded-r-md text-sm ${isMe ? 'bg-black/20' : 'bg-black/5'}`}>
                     <div className="font-bold text-[11px] opacity-80">{m.reply_to.sender_id === currentUser.id ? 'Вы' : m.reply_to.profiles?.name}</div>
                     <div className="truncate opacity-80">{m.reply_to.text}</div>
                   </div>
                 )}
-                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover" />}
+
+                {/* ОТОБРАЖЕНИЕ ФОТО И ФАЙЛОВ */}
+                {m.file_type === 'image' && (
+                  <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover cursor-pointer" onClick={() => window.open(m.file_url, '_blank')} />
+                )}
+                {m.file_type === 'file' && (
+                  <a href={m.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isMe ? 'bg-blue-600/50' : 'bg-black/5 dark:bg-white/10'}`}>
+                    <span className="text-2xl">📄</span><span className="text-sm underline truncate">{m.text.replace('📎 ', '')}</span>
+                  </a>
+                )}
+
+                {/* Текст */}
                 {!m.file_type && <div className="text-[15px] leading-snug break-words px-1 pb-1">{formatText(m.text)}</div>}
-                <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-white/70' : 'text-gray-500'}`}>{m.is_pinned && '📌'}{m.is_edited && 'изм.'} {time} {isMe && <span>✓✓</span>}</div>
+                
+                {/* Время */}
+                <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-white/70' : 'text-gray-500'}`}>
+                  {m.is_pinned && '📌'}{m.is_edited && 'изм.'} {time} {isMe && <span>✓✓</span>}
+                </div>
               </div>
             </div>
           );
@@ -244,6 +303,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         </div>
       )}
 
+      {/* --- ПОЛЕ ВВОДА С КНОПКАМИ --- */}
       <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         {replyTo && !editMsg && (
           <div className="flex items-center gap-2 bg-black/5 p-2 rounded-xl border-l-4 border-blue-500">
@@ -257,8 +317,20 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
             <button onClick={() => { setEditMsg(null); setInput(''); }} className="text-gray-500 px-2">✕</button>
           </div>
         )}
+        
         <div className="flex items-end gap-2">
+          {/* СКРЫТЫЙ ИНПУТ И КНОПКА СКРЕПКИ */}
+          <input type="file" ref={fileInputRef} onChange={uploadFile} className="hidden" accept="image/*,application/pdf,.doc,.docx,.zip" />
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            disabled={uploading} 
+            className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl hover:bg-black/10 transition"
+          >
+            {uploading ? '⏳' : '📎'}
+          </button>
+          
           <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-xl">🎁</button>
+          
           <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" />
           <button onClick={sendMessage} className={`p-3 rounded-full text-white shrink-0 transition shadow-lg ${editMsg ? 'bg-green-500' : 'bg-blue-500'}`}>{editMsg ? '✓' : '➤'}</button>
         </div>
