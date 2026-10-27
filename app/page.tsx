@@ -9,6 +9,7 @@ import CreateChatModal from "../components/CreateChatModal";
 import AdminPanel from "../components/AdminPanel";
 import NotificationToast from "../components/NotificationToast";
 import ThemeSettings from "../components/ThemeSettings";
+import PrivacySettings from "../components/PrivacySettings";
 import { createClient } from '@/lib/supabase/client'
 
 export default function Home() {
@@ -22,6 +23,7 @@ export default function Home() {
   const [showCreateChat, setShowCreateChat] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   const [notification, setNotification] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -42,7 +44,6 @@ export default function Home() {
     }
   };
 
-  // Загрузка чатов с последним сообщением
   const fetchChats = async () => {
     if (!currentUser) return;
     
@@ -60,7 +61,6 @@ export default function Home() {
       const formattedChats = await Promise.all(data.map(async (item: any) => {
         const chat = item.chats;
         
-        // Подтягиваем последнее сообщение
         const { data: lastMsgData } = await supabase
           .from('messages')
           .select('text, file_type, gift, created_at')
@@ -95,7 +95,6 @@ export default function Home() {
   useEffect(() => { fetchUser(); }, []);
   useEffect(() => { if(currentUser) fetchChats(); }, [currentUser]);
 
-  // Глобальные уведомления
   useEffect(() => {
     if (!currentUser) return;
     const channel = supabase.channel('global_notifications')
@@ -120,7 +119,6 @@ export default function Home() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, activeChat, supabase]);
 
-  // Догрузка при возврате на вкладку
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -182,12 +180,13 @@ export default function Home() {
         </div>
       </div>
 
-      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} onOpenTheme={() => setShowTheme(true)} />}
+      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} onOpenTheme={() => setShowTheme(true)} onOpenPrivacy={() => setShowPrivacy(true)} />}
       {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
       {showSettings && <SettingsModal currentUser={currentUser} onClose={() => setShowSettings(false)} onUpdate={fetchUser} />}
       {showCreateChat && <CreateChatModal currentUser={currentUser} onClose={() => setShowCreateChat(false)} onCreated={() => { fetchChats(); setShowCreateChat(false); }} />}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       {showTheme && <ThemeSettings onClose={() => setShowTheme(false)} />}
+      {showPrivacy && <PrivacySettings currentUser={currentUser} onClose={() => setShowPrivacy(false)} onUpdate={fetchUser} />}
     </main>
   );
 }
