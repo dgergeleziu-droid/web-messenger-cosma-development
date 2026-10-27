@@ -1,100 +1,105 @@
 'use client'
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 
-export default function PrivacySettings({ currentUser, onClose, onUpdate }: any) {
-  const supabase = createClient()
-  const [loading, setLoading] = useState(false)
-  
-  // Загружаем настройки (если нет, ставим дефолтные)
-  const defaultSettings = {
-    phone: 'everybody',
-    last_seen: 'everybody',
-    profile_photo: 'everybody',
-    calls: 'everybody',
-    forwarded_messages: 'everybody'
+export default function PrivacySettings({ onClose }: { onClose: () => void }) {
+  // Состояния для переключателей (в реальном приложении они должны сохраняться в базу)
+  const [settings, setSettings] = useState({
+    blacklist: '241',
+    activeSites: '6',
+    passcode: 'Нет',
+    cloudPassword: 'Вкл',
+    accessKeys: 'Вкл',
+    autoDelete: 'Нет',
+    phoneNumber: 'Никто (+14)',
+    lastSeen: 'Контакты',
+    profilePhotos: 'Все',
+    bio: 'Все',
+    gifts: 'Все',
+    birthday: 'Контакты',
+    savedMusic: 'Все',
+    forwards: 'Все',
+    calls: 'Все',
+    voiceMessages: 'Все',
+    messages: 'Все',
+    invites: 'Все',
+  })
+
+  const handleSelect = (key: string, value: string) => {
+    setSettings(prev => ({ ...prev, [key]: value }))
   }
-  const [settings, setSettings] = useState<any>(currentUser.privacy_settings || defaultSettings)
-  
-  // Состояние для выпадающего меню выбора (какой пункт сейчас настраиваем)
-  const [activeMenu, setActiveMenu] = useState<string | null>(null)
-
-  const handleSave = async (key: string, value: string) => {
-    const newSettings = { ...settings, [key]: value }
-    setSettings(newSettings)
-    setActiveMenu(null) // Закрываем меню
-    
-    await supabase.from('profiles').update({ privacy_settings: newSettings }).eq('id', currentUser.id)
-    onUpdate() // Обновляем данные пользователя на главной
-  }
-
-  const options = [
-    { id: 'everybody', label: 'Все' },
-    { id: 'contacts', label: 'Мои контакты' },
-    { id: 'nobody', label: 'Никто' },
-  ]
-
-  const getLabel = (id: string) => options.find(o => o.id === id)?.label || 'Все'
-
-  const menuItems = [
-    { id: 'phone', title: 'Номер телефона', desc: 'Кто видит мой номер' },
-    { id: 'last_seen', title: 'Время захода', desc: 'Кто видит время моего последнего визита' },
-    { id: 'profile_photo', title: 'Фото профиля', desc: 'Кто видит мое фото' },
-    { id: 'calls', title: 'Звонки', desc: 'Кто может мне звонить' },
-    { id: 'forwarded_messages', title: 'Пересланные сообщения', desc: 'Кто видит ссылку на мой профиль' },
-  ]
 
   return (
-    <div className="absolute inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#17212b] text-white w-full max-w-md h-[85vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-white/10" onClick={e => e.stopPropagation()}>
+    <div className="absolute inset-0 z-[70] bg-[#0e1621] text-white flex flex-col" onClick={onClose}>
+      <div className="flex-1 overflow-y-auto" onClick={e => e.stopPropagation()}>
         
         {/* Шапка */}
-        <div className="p-4 border-b border-white/10 flex items-center gap-4 bg-[#17212b] shrink-0">
-          <button onClick={onClose} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition text-white">←</button>
+        <div className="sticky top-0 bg-[#0e1621] z-10 p-4 border-b border-white/10 flex items-center gap-4">
+          <button onClick={onClose} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition">←</button>
           <h1 className="text-lg font-semibold">Конфиденциальность</h1>
         </div>
 
-        <div className="flex-1 overflow-y-auto relative">
-          <div className="p-4 space-y-1">
-            {menuItems.map(item => (
-              <button 
-                key={item.id} 
-                onClick={() => setActiveMenu(item.id)}
-                className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-white/5 rounded-xl transition text-left"
-              >
-                <div>
-                  <div className="text-[15px] font-medium text-white">{item.title}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{item.desc}</div>
-                </div>
-                <div className="flex items-center gap-2 text-gray-400">
-                  <span className="text-sm">{getLabel(settings[item.id])}</span>
-                  <span>›</span>
-                </div>
-              </button>
-            ))}
+        <div className="p-4 space-y-6">
+          
+          {/* Блок 1: Безопасность */}
+          <div className="bg-[#17212b] rounded-2xl overflow-hidden">
+            <SettingItem icon="🛑" bg="bg-red-500" title="Чёрный список" value={settings.blacklist} />
+            <SettingItem icon="🌐" bg="bg-blue-500" title="Активные сайты" value={settings.activeSites} />
+            <SettingItem icon="🔐" bg="bg-green-500" title="Код-пароль и Face ID" value={settings.passcode} />
+            <SettingItem icon="🔒" bg="bg-yellow-500" title="Облачный пароль" value={settings.cloudPassword} />
+            <SettingItem icon="🔑" bg="bg-purple-500" title="Ключи доступа" value={settings.accessKeys} />
+            <SettingItem icon="⏱️" bg="bg-pink-500" title="Автоудаление сообщений" value={settings.autoDelete} last />
           </div>
+          <p className="text-xs text-gray-400 px-2 -mt-4 mb-4">
+            Автоматически удалять сообщения спустя указанное время у всех участников во всех чатах, созданных после включения настройки.
+          </p>
 
-          {/* Выпадающее меню (Overlay) */}
-          {activeMenu && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center p-4 z-10" onClick={() => setActiveMenu(null)}>
-              <div className="bg-[#242f3d] rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-                <div className="p-4 border-b border-white/10 text-center font-semibold text-white">
-                  Кто может видеть?
-                </div>
-                {options.map(opt => (
-                  <button 
-                    key={opt.id}
-                    onClick={() => handleSave(activeMenu, opt.id)}
-                    className="w-full text-left p-4 text-white hover:bg-white/10 transition flex items-center justify-between"
-                  >
-                    <span>{opt.label}</span>
-                    {settings[activeMenu] === opt.id && <span className="text-blue-500">✓</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Блок 2: Почта */}
+          <div className="bg-[#17212b] rounded-2xl overflow-hidden">
+            <SettingItem icon="@" bg="bg-indigo-500" title="Почта для входа" value="" last />
+          </div>
+          <p className="text-xs text-gray-400 px-2 -mt-4 mb-4">
+            Укажите адрес электронной почты для отправки проверочных кодов Telegram.
+          </p>
+
+          {/* Блок 3: Приватность */}
+          <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider px-2 mt-6">Конфиденциальность</h2>
+          <div className="bg-[#17212b] rounded-2xl overflow-hidden">
+            <SettingItem icon="📞" bg="bg-blue-500" title="Номер телефона" value={settings.phoneNumber} />
+            <SettingItem icon="⏰" bg="bg-teal-500" title="Время захода" value={settings.lastSeen} />
+            <SettingItem icon="🖼️" bg="bg-orange-500" title="Фотографии профиля" value={settings.profilePhotos} />
+            <SettingItem icon="📝" bg="bg-gray-500" title="Раздел «О себе»" value={settings.bio} />
+            <SettingItem icon="🎁" bg="bg-yellow-500" title="Подарки" value={settings.gifts} />
+            <SettingItem icon="🎂" bg="bg-pink-500" title="День рождения" value={settings.birthday} />
+            <SettingItem icon="🎵" bg="bg-purple-500" title="Сохранённая музыка" value={settings.savedMusic} />
+            <SettingItem icon="➡️" bg="bg-blue-500" title="Пересылка сообщений" value={settings.forwards} />
+            <SettingItem icon="📞" bg="bg-green-500" title="Звонки" value={settings.calls} />
+            <SettingItem icon="🎤" bg="bg-red-500" title="Голосовые сообщения" value={settings.voiceMessages} />
+            <SettingItem icon="💬" bg="bg-blue-500" title="Сообщения" value={settings.messages} />
+            <SettingItem icon="✉️" bg="bg-gray-500" title="Приглашения" value={settings.invites} last />
+          </div>
+          <p className="text-xs text-gray-400 px-2 mt-2">
+            Вы можете выбрать, кому разрешаете приглашать Вас в группы и каналы.
+          </p>
+
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Вспомогательный компонент для строки настройки
+function SettingItem({ icon, bg, title, value, last }: { icon: string, bg: string, title: string, value: string, last?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between p-3 hover:bg-white/5 cursor-pointer ${!last ? 'border-b border-white/5' : ''}`}>
+      <div className="flex items-center gap-3">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white ${bg}`}>
+          {icon}
+        </div>
+        <span className="text-[15px] font-medium">{title}</span>
+      </div>
+      <div className="flex items-center gap-2 text-gray-400 text-sm">
+        {value && <span>{value}</span>}
+        <span>›</span>
       </div>
     </div>
   )
