@@ -37,6 +37,9 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
   const timerRef = useRef<any>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
 
+  // --- ПРОСМОТР ВИДЕО/КРУЖКА НА ВЕСЬ ЭКРАН ---
+  const [fullscreenMedia, setFullscreenMedia] = useState<{ url: string, type: 'video_note' | 'image' } | null>(null);
+
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
@@ -155,7 +158,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         if (blob.size < 100) return;
 
         setUploading(true);
-        // Сохраняем с правильным расширением
         const fileExt = mimeType.includes('mp4') ? 'mp4' : 'webm';
         const filePath = `${chat.id}/${crypto.randomUUID()}.${fileExt}`;
         
@@ -339,6 +341,21 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       )}
 
+      {/* ПРОСМОТР ВИДЕО/КРУЖКА НА ВЕСЬ ЭКРАН */}
+      {fullscreenMedia && (
+        <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center" onClick={() => setFullscreenMedia(null)}>
+          <video 
+            src={fullscreenMedia.url} 
+            autoPlay 
+            controls 
+            playsInline 
+            className="w-full h-full object-contain" 
+            style={fullscreenMedia.type === 'video_note' ? { transform: 'scaleX(-1)', borderRadius: '50%', maxWidth: '80vh', maxHeight: '80vh' } : {}} 
+          />
+          <button className="absolute top-6 right-6 text-white text-3xl p-2" onClick={() => setFullscreenMedia(null)}>✕</button>
+        </div>
+      )}
+
       {/* СПИСОК СООБЩЕНИЙ */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.map((m) => {
@@ -376,12 +393,16 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
+          // ГОЛОСОВОЕ (АУДИО)
           if (m.file_type === 'voice') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                 <div onMouseDown={() => handlePressStart(m)} onMouseUp={handlePressEnd} onTouchStart={() => handlePressStart(m)} onTouchEnd={handlePressEnd}
                   className={`flex items-center gap-3 p-2 px-3 rounded-2xl shadow-sm border cursor-pointer transition-all ${isMe ? `${bubbleMe} text-white rounded-br-sm border-transparent` : `${bubbleOther} text-black dark:text-white rounded-bl-sm border-white/20`}`}>
-                  <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">▶️</div>
+                  <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                    <audio src={m.file_url} controls className="w-8 h-8 opacity-0 absolute" />
+                    <span className="text-xl">▶️</span>
+                  </div>
                   <div className="flex flex-col gap-1 w-32">
                     <div className="h-1.5 w-full bg-white/30 rounded-full overflow-hidden">
                       <div className="h-full bg-white w-1/3"></div>
@@ -396,29 +417,21 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
-          // РЕНДЕР КРУЖОЧКА (С КАСТОМНОЙ КНОПКОЙ PLAY)
+          // КРУЖОЧЕК
           if (m.file_type === 'video_note') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                <div className={`relative w-48 h-48 rounded-full overflow-hidden shadow-lg border-2 bg-black ${isMe ? 'border-blue-400' : 'border-gray-300'}`}>
+                <div 
+                  onClick={() => setFullscreenMedia({ url: m.file_url, type: 'video_note' })}
+                  className={`relative w-48 h-48 rounded-full overflow-hidden shadow-lg cursor-pointer border-2 bg-black ${isMe ? 'border-blue-400' : 'border-gray-300'}`}>
                   <video 
                     src={m.file_url} 
                     className="w-full h-full object-cover" 
                     playsInline
-                    loop 
-                    style={{ transform: 'scaleX(-1)' }} // Переворачиваем для нормального вида
+                    style={{ transform: 'scaleX(-1)' }}
                   />
                   <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const video = e.currentTarget.parentElement?.parentElement?.querySelector('video');
-                        if (video?.paused) video.play(); else video?.pause();
-                      }}
-                      className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white text-3xl hover:bg-black/60 transition"
-                    >
-                      ▶
-                    </button>
+                    <div className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white text-3xl">▶</div>
                   </div>
                   <div className={`absolute bottom-2 left-0 right-0 text-center text-[10px] text-white font-bold drop-shadow-md`}>{time}</div>
                 </div>
@@ -426,6 +439,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
+          // ОБЫЧНОЕ СООБЩЕНИЕ / ФОТО / ФАЙЛ
           return (
             <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
               <div onClick={() => selectedMsgs.length > 0 && setSelectedMsgs(p => p.includes(m.id) ? p.filter(i => i !== m.id) : [...p, m.id])}
@@ -441,7 +455,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
                   </div>
                 )}
 
-                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover cursor-pointer" onClick={() => window.open(m.file_url, '_blank')} />}
+                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover cursor-pointer" onClick={() => setFullscreenMedia({ url: m.file_url, type: 'image' })} />}
                 {m.file_type === 'file' && (
                   <a href={m.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isMe ? 'bg-blue-600/50' : 'bg-black/5 dark:bg-white/10'}`}>
                     <span className="text-2xl">📄</span><span className="text-sm underline truncate">{m.text.replace('📎 ', '')}</span>
