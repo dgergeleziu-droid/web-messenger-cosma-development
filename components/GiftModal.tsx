@@ -16,7 +16,7 @@ const FALLBACK_GIFTS = [
   { id: 'dragon', name: 'Дракон', emoji: '🐉', base_price: 1000, is_limited: true },
 ]
 
-export default function GiftModal({ currentUser, chatId, receiverId, onClose, onGiftSent }: any) {
+export default function GiftModal({ currentUser, chatId, receiverId, onClose, onGiftSent, onUpdateUser }: any) {
   const [gifts, setGifts] = useState<any[]>(FALLBACK_GIFTS)
   const [selectedGift, setSelectedGift] = useState<any>(null)
   const [caption, setCaption] = useState('')
@@ -33,81 +33,30 @@ export default function GiftModal({ currentUser, chatId, receiverId, onClose, on
   }, [])
 
   const sendGift = async () => {
-    if (!selectedGift) return
-    if (!receiverId) {
-      alert('Ошибка: не удалось определить получателя подарка.')
-      return
-    }
-    
+    if (!selectedGift || !receiverId) return
     setLoading(true)
-    const upgradeCost = upgrade ? 25 : 0
-    const totalCost = selectedGift.base_price + upgradeCost
 
-    if ((currentUser.stars || 0) < totalCost) {
-      alert('Недостаточно звёзд!')
-      setLoading(false)
-      return
-    }
+    const totalCost = selectedGift.base_price + (upgrade ? 25 : 0)
 
-    // 1. Списываем звезды
-    const { error: starError } = await supabase.from('profiles').update({ stars: currentUser.stars - totalCost }).eq('id', currentUser.id)
-    if (starError) {
-      alert('Ошибка списания звезд: ' + starError.message)
-      setLoading(false)
-      return
-    }
-
-    // Генерируем атрибуты
-    let attributes: any = {}
-    if (upgrade) {
-      attributes = {
-        model: ['gold', 'silver', 'bronze', 'platinum'][Math.floor(Math.random() * 4)],
-        backdrop: ['stars', 'gradient', 'solid'][Math.floor(Math.random() * 3)],
-        symbol: ['sparkle', 'crown', 'heart'][Math.floor(Math.random() * 3)],
-        serial_number: Math.floor(Math.random() * 10000) + 1,
-        rarity_score: Math.floor(Math.random() * 1000) + 1,
-        rarity_tier: 'uncommon',
-        upgraded_at: new Date().toISOString(),
-      }
-    }
-
-    // 2. Записываем подарок в инвентарь получателя
-    const { error: giftError } = await supabase.from('user_gifts').insert({
-      user_id: receiverId,
-      gift_id: selectedGift.id,
-      ...attributes,
+    // Вызываем нашу новую безопасную функцию
+    const { error } = await supabase.rpc('send_gift_transaction', {
+      p_chat_id: chatId,
+      p_receiver_id: receiverId,
+      p_gift_id: selectedGift.id,
+      p_gift_emoji: selectedGift.emoji,
+      p_text: caption.trim() ? `${caption} (Подарок: ${selectedGift.name})` : `Подарил ${selectedGift.name}${upgrade ? ' (улучшенный)' : ''}`,
+      p_cost: totalCost,
+      p_is_upgrade: upgrade,
+      p_user_id: currentUser.id
     })
 
-    if (giftError) {
-      alert('Ошибка при создании подарка: ' + giftError.message)
-      // ВОЗВРАЩАЕМ ЗВЕЗДЫ ОБРАТНО
-      await supabase.from('profiles').update({ stars: currentUser.stars }).eq('id', currentUser.id)
-      setLoading(false)
-      return
+    if (error) {
+      alert('Ошибка: ' + error.message)
+    } else {
+      if (onUpdateUser) await onUpdateUser() // Обновляем баланс в интерфейсе
+      onGiftSent()
+      onClose()
     }
-
-    // 3. Отправляем сообщение с подарком в чат
-    const finalText = caption.trim() ? `${caption} (Подарок: ${selectedGift.name})` : `Подарил ${selectedGift.name}${upgrade ? ' (улучшенный)' : ''}`;
-    
-    const { error: msgError } = await supabase.from('messages').insert({
-      id: crypto.randomUUID(),
-      chat_id: chatId,
-      sender_id: currentUser.id,
-      text: finalText,
-      gift: selectedGift.emoji,
-    })
-
-    if (msgError) {
-      alert('Ошибка при отправке сообщения: ' + msgError.message)
-      // ВОЗВРАЩАЕМ ЗВЕЗДЫ (подарок запишется, но сообщения не будет)
-      await supabase.from('profiles').update({ stars: currentUser.stars }).eq('id', currentUser.id)
-      setLoading(false)
-      return
-    }
-
-    // Всё успешно!
-    onGiftSent()
-    onClose()
     setLoading(false)
   }
 
