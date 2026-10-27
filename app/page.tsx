@@ -26,17 +26,19 @@ export default function Home() {
   const [showTheme, setShowTheme] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
 
-  // Уведомления
+  // Состояния для уведомлений
   const [notification, setNotification] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   
   const supabase = createClient();
 
-  // 1. Загрузка профиля
+  // 1. Загрузка профиля (создаем, если его нет)
   const fetchUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      
+      // Если профиля нет (старый аккаунт), принудительно создаем
       if (!profile) {
         const { data: newProfile } = await supabase.from('profiles').insert({
           id: user.id, name: user.email?.split('@')[0] || 'Пользователь', avatar_color: '#2aabee', stars: 100
@@ -142,7 +144,7 @@ export default function Home() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, activeChat, supabase]);
 
-  // 4. Догрузка при возврате на вкладку
+  // 4. Догрузка при возврате на вкладку (для мобильных)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
