@@ -49,7 +49,6 @@ export default function SettingsModal({ currentUser, onClose, onUpdate, onOpenPr
     <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white/90 dark:bg-[#17212b]/95 backdrop-blur-2xl rounded-3xl w-full max-w-md p-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         
-        {/* Блок Премиума */}
         <div className={`rounded-2xl p-4 mb-6 border ${currentUser.is_premium ? 'bg-gradient-to-r from-purple-500/20 to-blue-500/20 border-purple-500/50' : 'bg-black/5 dark:bg-white/5 border-transparent'}`}>
           <div className="flex justify-between items-center mb-2">
             <h3 className="font-bold text-black dark:text-white flex items-center gap-2">
@@ -101,7 +100,6 @@ export default function SettingsModal({ currentUser, onClose, onUpdate, onOpenPr
           {loading ? 'Сохранение...' : 'Сохранить'}
         </button>
 
-        {/* НОВАЯ КНОПКА КОНФИДЕНЦИАЛЬНОСТИ */}
         <button 
           onClick={() => { onClose(); onOpenPrivacy(); }} 
           className="w-full flex items-center justify-between px-4 py-3 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-xl transition"
