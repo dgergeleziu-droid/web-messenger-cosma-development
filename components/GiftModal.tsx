@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// Резервный список подарков, если база не загрузится
 const FALLBACK_GIFTS = [
   { id: 'heart', name: 'Сердце', emoji: '💖', base_price: 10, is_limited: false },
   { id: 'bear', name: 'Мишка', emoji: '🧸', base_price: 15, is_limited: false },
@@ -20,7 +19,7 @@ const FALLBACK_GIFTS = [
 export default function GiftModal({ currentUser, chatId, receiverId, onClose, onGiftSent }: any) {
   const [gifts, setGifts] = useState<any[]>(FALLBACK_GIFTS)
   const [selectedGift, setSelectedGift] = useState<any>(null)
-  const [caption, setCaption] = useState('') // <--- Поле для подписи
+  const [caption, setCaption] = useState('')
   const [upgrade, setUpgrade] = useState(false)
   const [loading, setLoading] = useState(false)
   const supabase = createClient()
@@ -35,8 +34,12 @@ export default function GiftModal({ currentUser, chatId, receiverId, onClose, on
 
   const sendGift = async () => {
     if (!selectedGift) return
+    if (!receiverId) {
+      alert('Ошибка: не удалось определить получателя подарка.')
+      return
+    }
+    
     setLoading(true)
-
     const upgradeCost = upgrade ? 25 : 0
     const totalCost = selectedGift.base_price + upgradeCost
 
@@ -46,8 +49,15 @@ export default function GiftModal({ currentUser, chatId, receiverId, onClose, on
       return
     }
 
-    await supabase.from('profiles').update({ stars: currentUser.stars - totalCost }).eq('id', currentUser.id)
+    // 1. Списываем звезды
+    const { error: starError } = await supabase.from('profiles').update({ stars: currentUser.stars - totalCost }).eq('id', currentUser.id)
+    if (starError) {
+      alert('Ошибка списания звезд: ' + starError.message)
+      setLoading(false)
+      return
+    }
 
+    // Генерируем атрибуты
     let attributes: any = {}
     if (upgrade) {
       attributes = {
@@ -61,27 +71,43 @@ export default function GiftModal({ currentUser, chatId, receiverId, onClose, on
       }
     }
 
-    const { error } = await supabase.from('user_gifts').insert({
+    // 2. Записываем подарок в инвентарь получателя
+    const { error: giftError } = await supabase.from('user_gifts').insert({
       user_id: receiverId,
       gift_id: selectedGift.id,
       ...attributes,
     })
 
-    if (!error) {
-      // Если ввели текст, отправляем его, иначе стандартный
-      const finalText = caption.trim() ? `${caption} (Подарок: ${selectedGift.name})` : `Подарил ${selectedGift.name}${upgrade ? ' (улучшенный)' : ''}`;
-
-      await supabase.from('messages').insert({
-        chat_id: chatId,
-        sender_id: currentUser.id,
-        text: finalText,
-        gift: selectedGift.emoji,
-      })
-      onGiftSent()
-      onClose()
-    } else {
-      alert('Ошибка отправки: ' + error.message)
+    if (giftError) {
+      alert('Ошибка при создании подарка: ' + giftError.message)
+      // ВОЗВРАЩАЕМ ЗВЕЗДЫ ОБРАТНО
+      await supabase.from('profiles').update({ stars: currentUser.stars }).eq('id', currentUser.id)
+      setLoading(false)
+      return
     }
+
+    // 3. Отправляем сообщение с подарком в чат
+    const finalText = caption.trim() ? `${caption} (Подарок: ${selectedGift.name})` : `Подарил ${selectedGift.name}${upgrade ? ' (улучшенный)' : ''}`;
+    
+    const { error: msgError } = await supabase.from('messages').insert({
+      id: crypto.randomUUID(),
+      chat_id: chatId,
+      sender_id: currentUser.id,
+      text: finalText,
+      gift: selectedGift.emoji,
+    })
+
+    if (msgError) {
+      alert('Ошибка при отправке сообщения: ' + msgError.message)
+      // ВОЗВРАЩАЕМ ЗВЕЗДЫ (подарок запишется, но сообщения не будет)
+      await supabase.from('profiles').update({ stars: currentUser.stars }).eq('id', currentUser.id)
+      setLoading(false)
+      return
+    }
+
+    // Всё успешно!
+    onGiftSent()
+    onClose()
     setLoading(false)
   }
 
@@ -112,7 +138,6 @@ export default function GiftModal({ currentUser, chatId, receiverId, onClose, on
 
         {selectedGift && (
           <div className="space-y-3 mb-4">
-            {/* ПОЛЕ ДЛЯ ПОДПИСИ */}
             <input 
               type="text" 
               value={caption} 
