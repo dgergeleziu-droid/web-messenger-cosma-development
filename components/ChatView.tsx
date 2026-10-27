@@ -133,7 +133,12 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         }, 100);
       }
 
-      const mediaRecorder = new MediaRecorder(stream);
+      // ВЫБИРАЕМ ПРАВИЛЬНЫЙ ФОРМАТ (mp4 для iPhone, webm для остальных)
+      const mimeType = mode === 'voice' 
+        ? (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4')
+        : (MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm');
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (e) => {
@@ -141,7 +146,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
       };
 
       mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: mode === 'voice' ? 'audio/webm' : 'video/webm' });
+        const blob = new Blob(chunksRef.current, { type: mimeType });
         stream.getTracks().forEach(track => track.stop());
         setVideoStream(null);
         setRecordingMode(null);
@@ -150,7 +155,9 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         if (blob.size < 100) return;
 
         setUploading(true);
-        const filePath = `${chat.id}/${crypto.randomUUID()}.webm`;
+        // Сохраняем с правильным расширением
+        const fileExt = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        const filePath = `${chat.id}/${crypto.randomUUID()}.${fileExt}`;
         
         const { error } = await supabase.storage.from('chat_media').upload(filePath, blob);
         if (!error) {
@@ -320,7 +327,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
       {recordingMode === 'video_note' && (
         <div className="absolute inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center">
           <div className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-blue-500 shadow-[0_0_50px_rgba(59,130,246,0.5)]">
-            {/* Применяем scaleX(-1), чтобы превью было как зеркало */}
             <video ref={videoPreviewRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
             <div className="absolute bottom-4 left-0 right-0 text-center text-white font-bold text-xl drop-shadow-md">
               {formatTime(recordingTime)} / 0:15
@@ -390,14 +396,30 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
-          // РЕНДЕР КРУЖОЧКА (С ФИКСОМ ЗЕРКАЛЬНОСТИ)
+          // РЕНДЕР КРУЖОЧКА (С КАСТОМНОЙ КНОПКОЙ PLAY)
           if (m.file_type === 'video_note') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                <div onMouseDown={() => handlePressStart(m)} onMouseUp={handlePressEnd} onTouchStart={() => handlePressStart(m)} onTouchEnd={handlePressEnd}
-                  className={`relative w-40 h-40 rounded-full overflow-hidden shadow-lg cursor-pointer border-2 ${isMe ? 'border-blue-400' : 'border-gray-300'}`}>
-                  {/* Добавлен style transform: scaleX(-1), чтобы перевернуть видео в нормальное положение */}
-                  <video src={m.file_url} className="w-full h-full object-cover" controls playsInline style={{ transform: 'scaleX(-1)' }} />
+                <div className={`relative w-48 h-48 rounded-full overflow-hidden shadow-lg border-2 bg-black ${isMe ? 'border-blue-400' : 'border-gray-300'}`}>
+                  <video 
+                    src={m.file_url} 
+                    className="w-full h-full object-cover" 
+                    playsInline
+                    loop 
+                    style={{ transform: 'scaleX(-1)' }} // Переворачиваем для нормального вида
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const video = e.currentTarget.parentElement?.parentElement?.querySelector('video');
+                        if (video?.paused) video.play(); else video?.pause();
+                      }}
+                      className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white text-3xl hover:bg-black/60 transition"
+                    >
+                      ▶
+                    </button>
+                  </div>
                   <div className={`absolute bottom-2 left-0 right-0 text-center text-[10px] text-white font-bold drop-shadow-md`}>{time}</div>
                 </div>
               </div>
@@ -466,7 +488,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         />
       )}
 
-      {/* ПАНЕЛЬ ВВОДА С УМЕНЬШЕННЫМИ КНОПКАМИ */}
+      {/* ПАНЕЛЬ ВВОДА */}
       <div className="p-2 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))] relative">
         
         {recordingMode === 'voice' && isRecording ? (
@@ -481,17 +503,14 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
           <div className="flex items-end gap-1">
             <input type="file" ref={fileInputRef} onChange={uploadFile} className="hidden" accept="image/*,application/pdf,.doc,.docx,.zip" />
             
-            {/* Левая группа кнопок */}
             <button onClick={() => setShowPicker(!showPicker)} className={`p-2.5 rounded-full shrink-0 text-lg transition ${showPicker ? 'bg-blue-500/20 text-blue-500' : 'bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-black/10'}`}>😊</button>
             
             <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-lg hover:bg-black/10 transition">{uploading ? '⏳' : '📎'}</button>
             
             <button onClick={() => setShowGifts(true)} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-lg">🎁</button>
             
-            {/* Поле ввода (увеличено) */}
             <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-3xl px-4 py-3 min-h-[44px] outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" />
             
-            {/* Правая кнопка (микрофон/видео или отправить) */}
             {!input.trim() ? (
               <div className="flex shrink-0">
                 <button onClick={() => startRecording('voice')} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-blue-500 text-lg mr-1">🎤</button>
