@@ -7,8 +7,25 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
   const supabase = createClient()
   const router = useRouter()
   const [isDark, setIsDark] = useState(false)
+  const [userGifts, setUserGifts] = useState<any[]>([])
+  const [selectedGift, setSelectedGift] = useState<any>(null)
+  const [showCraft, setShowCraft] = useState(false)
+  const [craftSelection, setCraftSelection] = useState<string[]>([])
 
   useEffect(() => { setIsDark(document.documentElement.classList.contains('dark')) }, [])
+
+  // Загружаем подарки пользователя
+  useEffect(() => {
+    const fetchGifts = async () => {
+      const { data } = await supabase
+        .from('user_gifts')
+        .select('*, gift_catalog(*)')
+        .eq('user_id', user.id)
+        .order('acquired_at', { ascending: false })
+      if (data) setUserGifts(data)
+    }
+    fetchGifts()
+  }, [user.id])
 
   const toggleTheme = () => {
     const newDark = !isDark
@@ -17,11 +34,79 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
     else { document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light'); }
   }
 
-  const gifts = user?.gifts_inventory || []
+  // Надеть/снять подарок как статус
+  const wearGift = async (gift: any) => {
+    const isWorn = gift.is_worn
+    // Снимаем все остальные
+    await supabase.from('user_gifts').update({ is_worn: false }).eq('user_id', user.id)
+    if (!isWorn) {
+      await supabase.from('user_gifts').update({ is_worn: true }).eq('id', gift.id)
+      await supabase.from('profiles').update({ worn_gift_id: gift.id }).eq('id', user.id)
+    } else {
+      await supabase.from('profiles').update({ worn_gift_id: null }).eq('id', user.id)
+    }
+    // Обновляем локально
+    setUserGifts(prev => prev.map(g => ({ ...g, is_worn: g.id === gift.id ? !isWorn : false })))
+    setSelectedGift(null)
+  }
+
+  // Улучшить подарок (если ещё не улучшен)
+  const upgradeGift = async (gift: any) => {
+    if (gift.upgraded_at) return
+    if ((user.stars || 0) < 25) { alert('Недостаточно звёзд'); return }
+    // Списываем 25 звёзд
+    await supabase.from('profiles').update({ stars: user.stars - 25 }).eq('id', user.id)
+    // Генерируем атрибуты
+    const attrs = {
+      model: ['gold', 'silver', 'bronze', 'platinum'][Math.floor(Math.random() * 4)],
+      backdrop: ['stars', 'gradient', 'solid'][Math.floor(Math.random() * 3)],
+      symbol: ['sparkle', 'crown', 'heart'][Math.floor(Math.random() * 3)],
+      serial_number: Math.floor(Math.random() * 10000) + 1,
+      rarity_score: Math.floor(Math.random() * 1000) + 1,
+      rarity_tier: 'uncommon',
+      upgraded_at: new Date().toISOString(),
+    }
+    await supabase.from('user_gifts').update(attrs).eq('id', gift.id)
+    // Обновляем локально
+    setUserGifts(prev => prev.map(g => g.id === gift.id ? { ...g, ...attrs } : g))
+    setSelectedGift(null)
+  }
+
+  // Крафтинг: объединить до 4 подарков
+  const craftGifts = async () => {
+    if (craftSelection.length < 2) { alert('Выберите хотя бы 2 подарка'); return }
+    // Проверяем, что все выбранные — коллекционные (упрощённо)
+    // Случайный результат: более высокий тир
+    const tiers = ['uncommon', 'rare', 'epic', 'legendary']
+    const currentTier = 'uncommon' // предполагаем, что все выбранные одного тира
+    const nextTier = tiers[Math.min(tiers.indexOf(currentTier) + 1, tiers.length - 1)]
+    // Удаляем выбранные подарки
+    await supabase.from('user_gifts').delete().in('id', craftSelection)
+    // Создаём новый подарок (упрощённо, без привязки к каталогу)
+    const newGift = {
+      user_id: user.id,
+      gift_id: 'crafted', // можно создать специальный
+      model: 'crafted',
+      backdrop: 'crafted',
+      symbol: 'crafted',
+      serial_number: Math.floor(Math.random() * 10000) + 1,
+      rarity_score: Math.floor(Math.random() * 100) + 1,
+      rarity_tier: nextTier,
+      upgraded_at: new Date().toISOString(),
+    }
+    await supabase.from('user_gifts').insert(newGift)
+    // Обновляем список
+    const { data } = await supabase.from('user_gifts').select('*, gift_catalog(*)').eq('user_id', user.id).order('acquired_at', { ascending: false })
+    if (data) setUserGifts(data)
+    setCraftSelection([])
+    setShowCraft(false)
+  }
 
   return (
     <div className="absolute inset-0 z-50 flex">
       <div className="w-[320px] h-full bg-white/90 dark:bg-[#17212b]/95 backdrop-blur-2xl flex flex-col shadow-2xl border-r border-white/20 dark:border-white/10 overflow-y-auto">
+        
+        {/* Шапка профиля */}
         <div className={`p-5 cursor-pointer hover:opacity-90 transition ${user?.is_premium ? 'bg-gradient-to-br from-purple-500 to-blue-500' : 'bg-gradient-to-b from-blue-500/20 to-transparent dark:from-blue-900/30'}`} onClick={onOpenSettings}>
           <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold mb-3 shadow-md text-white overflow-hidden border-2 border-white/30" style={{ backgroundColor: user?.avatar_color }}>
             {user?.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : user?.name?.[0]?.toUpperCase()}
@@ -35,16 +120,32 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
         </div>
 
         <div className="flex-1 py-2">
-          {gifts.length > 0 && (
-            <div className="px-5 mb-4">
-              <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Коллекция подарков</h3>
-              <div className="flex flex-wrap gap-2">
-                {gifts.map((gift: any, idx: number) => (
-                  <div key={idx} className="w-10 h-10 bg-black/5 dark:bg-white/10 rounded-full flex items-center justify-center text-xl shadow-sm" title={gift.name}>{gift.emoji}</div>
-                ))}
-              </div>
+          
+          {/* Коллекция подарков */}
+          <div className="px-5 mb-4">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Коллекция подарков</h3>
+              {userGifts.filter(g => g.upgraded_at).length >= 2 && (
+                <button onClick={() => setShowCraft(true)} className="text-xs text-blue-500 font-semibold">Скрафтить</button>
+              )}
             </div>
-          )}
+            <div className="flex flex-wrap gap-2">
+              {userGifts.map((gift: any) => (
+                <div 
+                  key={gift.id} 
+                  onClick={() => setSelectedGift(gift)}
+                  className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center text-xl shadow-sm cursor-pointer border ${gift.is_worn ? 'border-yellow-500 bg-yellow-500/20' : 'bg-black/5 dark:bg-white/10 border-transparent'}`}
+                  title={gift.gift_catalog?.name}
+                >
+                  <span>{gift.gift_catalog?.emoji || '🎁'}</span>
+                  {gift.upgraded_at && <span className="text-[8px] text-purple-500">💎</span>}
+                </div>
+              ))}
+              {userGifts.length === 0 && <p className="text-sm text-gray-400">Пока нет подарков</p>}
+            </div>
+          </div>
+
+          {/* Меню */}
           <div className="h-px bg-black/5 dark:bg-white/10 mx-4 my-2" />
           
           <div className="flex items-center justify-between px-5 py-3 hover:bg-black/5 cursor-pointer" onClick={toggleTheme}>
@@ -53,10 +154,7 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
           </div>
           
           <button onClick={() => { onClose(); onOpenTheme(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">🎨</span><span className="text-[15px] font-medium">Оформление</span></button>
-          
-          {/* КНОПКА КОНФИДЕНЦИАЛЬНОСТИ В ЛЕВОЙ ПАНЕЛИ */}
-          <button onClick={() => { onClose(); onOpenPrivacy(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">🔒</span><span className="text-[15px] font-medium text-black dark:text-white">Конфиденциальность</span></button>
-
+          <button onClick={() => { onClose(); onOpenPrivacy(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">🔒</span><span className="text-[15px] font-medium">Конфиденциальность</span></button>
           {user?.is_admin && <button onClick={() => { onClose(); onOpenAdmin(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-red-500/10 text-left"><span className="text-xl">👑</span><span className="text-[15px] font-bold text-red-500">Админ-панель</span></button>}
           <button onClick={() => { onClose(); onOpenCreateChat(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">👥</span><span className="text-[15px] font-medium">Создать группу / канал</span></button>
           <button onClick={onOpenSettings} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">⚙️</span><span className="text-[15px] font-medium">Настройки</span></button>
@@ -66,7 +164,56 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
           <button onClick={async () => { await supabase.auth.signOut(); router.push('/auth/login'); }} className="w-full flex items-center gap-4 px-5 py-4 text-red-500 hover:bg-red-500/10 transition text-left"><span className="text-xl">🚪</span><span className="text-[15px] font-medium">Выйти</span></button>
         </div>
       </div>
-      <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Модалка для выбранного подарка */}
+      {selectedGift && (
+        <div className="absolute inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelectedGift(null)}>
+          <div className="bg-white dark:bg-[#17212b] rounded-3xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <div className="text-center mb-4">
+              <div className="text-6xl mb-2">{selectedGift.gift_catalog?.emoji}</div>
+              <h3 className="font-bold text-lg">{selectedGift.gift_catalog?.name}</h3>
+              {selectedGift.upgraded_at && (
+                <div className="text-xs text-purple-500 mt-1">
+                  Модель: {selectedGift.model} · Фон: {selectedGift.backdrop} · Символ: {selectedGift.symbol} · #{selectedGift.serial_number}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <button onClick={() => wearGift(selectedGift)} className="w-full py-2 bg-blue-500 text-white rounded-xl">
+                {selectedGift.is_worn ? 'Снять' : 'Надеть как статус'}
+              </button>
+              {!selectedGift.upgraded_at && (
+                <button onClick={() => upgradeGift(selectedGift)} className="w-full py-2 bg-purple-500 text-white rounded-xl">
+                  Улучшить за 25 ⭐
+                </button>
+              )}
+              <button onClick={() => setSelectedGift(null)} className="w-full py-2 bg-gray-200 dark:bg-white/10 rounded-xl">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка крафта */}
+      {showCraft && (
+        <div className="absolute inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowCraft(false)}>
+          <div className="bg-white dark:bg-[#17212b] rounded-3xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-lg mb-4">Крафт подарков</h3>
+            <p className="text-sm text-gray-500 mb-4">Выберите до 4 коллекционных подарков, чтобы получить более редкий.</p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {userGifts.filter(g => g.upgraded_at).map(gift => (
+                <button key={gift.id} onClick={() => {
+                  setCraftSelection(prev => prev.includes(gift.id) ? prev.filter(id => id !== gift.id) : [...prev, gift.id])
+                }} className={`p-2 rounded-xl border ${craftSelection.includes(gift.id) ? 'border-blue-500 bg-blue-500/20' : 'border-transparent bg-black/5'}`}>
+                  <span className="text-3xl">{gift.gift_catalog?.emoji}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={craftGifts} disabled={craftSelection.length < 2} className="w-full py-2 bg-green-500 text-white rounded-xl disabled:opacity-50">
+              Скрафтить ({craftSelection.length})
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
