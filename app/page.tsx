@@ -202,15 +202,13 @@ export default function Home() {
           />
         </div>
 
-        {/* Правая панель (Чат) — тут добавлен flex flex-col для растягивания */}
+        {/* Правая панель (Чат) */}
         <div className={`flex-1 h-full flex flex-col rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/40 dark:bg-black/20 ${activeChat ? "" : "hidden md:flex md:items-center md:justify-center"}`}>
           {activeChat ? (
             <ChatView 
               chat={activeChat} 
               currentUser={currentUser} 
               onBack={() => setActiveChat(null)} 
-              allChats={chats} 
-              onUpdateUser={fetchUser} 
             />
           ) : (
             <div className="text-center text-gray-700 dark:text-gray-300">
