@@ -26,19 +26,17 @@ export default function Home() {
   const [showTheme, setShowTheme] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
 
-  // Состояния для уведомлений
+  // Уведомления
   const [notification, setNotification] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   
   const supabase = createClient();
 
-  // 1. Загрузка профиля (создаем, если его нет)
+  // 1. Загрузка профиля
   const fetchUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      
-      // Если профиля нет (старый аккаунт), принудительно создаем
       if (!profile) {
         const { data: newProfile } = await supabase.from('profiles').insert({
           id: user.id, name: user.email?.split('@')[0] || 'Пользователь', avatar_color: '#2aabee', stars: 100
@@ -66,7 +64,6 @@ export default function Home() {
       return;
     }
 
-    // Загружаем локальные контакты текущего пользователя
     const { data: contacts } = await supabase
       .from('local_contacts')
       .select('contact_id, custom_name')
@@ -76,7 +73,6 @@ export default function Home() {
       const formattedChats = await Promise.all(data.map(async (item: any) => {
         const chat = item.chats;
         
-        // Последнее сообщение
         const { data: lastMsgData } = await supabase
           .from('messages')
           .select('text, file_type, gift, created_at')
@@ -93,7 +89,6 @@ export default function Home() {
           chat.time = '';
         }
 
-        // Данные собеседника и кастомное имя
         if (chat.type === 'private' || chat.type === 'secret') {
           const otherParticipant = chat.chat_participants.find((p: any) => p.user_id !== currentUser.id);
           if (otherParticipant && otherParticipant.profiles) {
@@ -117,7 +112,7 @@ export default function Home() {
   useEffect(() => { fetchUser(); }, []);
   useEffect(() => { if(currentUser) fetchChats(); }, [currentUser]);
 
-  // 3. Глобальные уведомления (звук + шторка)
+  // 3. Уведомления
   useEffect(() => {
     if (!currentUser) return;
     const channel = supabase.channel('global_notifications')
@@ -130,7 +125,7 @@ export default function Home() {
         if (sender) {
           if (audioRef.current) {
             audioRef.current.currentTime = 0;
-            audioRef.current.play().catch(() => console.log('Звук заблокирован до первого клика'));
+            audioRef.current.play().catch(() => console.log('Звук заблокирован'));
           }
           setNotification({
             chatId: newMsg.chat_id,
@@ -144,7 +139,7 @@ export default function Home() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, activeChat, supabase]);
 
-  // 4. Догрузка при возврате на вкладку (для мобильных)
+  // 4. Догрузка при возврате
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -160,7 +155,7 @@ export default function Home() {
     };
   }, [currentUser]);
 
-  // 5. Создание личного чата
+  // 5. Создание чата
   const handleSelectUser = async (otherUser: any) => {
     setShowNewChat(false);
     const existingChat = chats.find(c => c.type === 'private' && c.chat_participants?.some((p: any) => p.user_id === otherUser.id));
@@ -177,7 +172,6 @@ export default function Home() {
     fetchChats();
   };
 
-  // 6. Обработка создания группы/канала
   const handleChatCreated = () => {
     fetchChats();
     setShowCreateChat(false);
@@ -203,7 +197,6 @@ export default function Home() {
       
       <div className="flex h-full w-full max-w-[1600px] mx-auto z-10 p-0 md:p-4 gap-4">
         
-        {/* Левая панель */}
         <div className={`w-full md:w-[380px] shrink-0 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/60 dark:bg-[#17212b]/60 ${activeChat ? "hidden md:block" : "block"}`}>
           <ChatList 
             chats={chats} 
@@ -215,7 +208,6 @@ export default function Home() {
           />
         </div>
 
-        {/* Правая панель (Чат) */}
         <div className={`flex-1 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/40 dark:bg-black/20 ${activeChat ? "block" : "hidden md:flex md:items-center md:justify-center"}`}>
           {activeChat ? (
             <ChatView 
@@ -234,7 +226,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Модальные окна */}
       {showProfile && (
         <Profile 
           user={currentUser} 
