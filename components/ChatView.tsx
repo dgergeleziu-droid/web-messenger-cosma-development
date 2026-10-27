@@ -8,21 +8,17 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [showGifts, setShowGifts] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [otherUser, setOtherUser] = useState<any>(null);
   
-  // Состояния для меню действий
   const [activeMenuMsg, setActiveMenuMsg] = useState<any>(null);
   const [replyTo, setReplyTo] = useState<any>(null);
   const [editMsg, setEditMsg] = useState<any>(null);
   const [forwardMsg, setForwardMsg] = useState<any>(null);
-  const [selectedMsgs, setSelectedMsgs] = useState<string[]>([]); // Для массового выделения
+  const [selectedMsgs, setSelectedMsgs] = useState<string[]>([]);
   
   const endRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
-  // 1. Загружаем профиль собеседника и слушаем его изменения
   useEffect(() => {
     const fetchOtherUser = async () => {
       if (chat.type === 'private' || chat.type === 'secret') {
@@ -34,75 +30,45 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       }
     };
     fetchOtherUser();
+  }, [chat.id, chat.type, currentUser.id, supabase]);
 
-    const profileChannel = supabase.channel(`profile_${chat.id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
-        if (payload.new.id === otherUser?.id) setOtherUser(payload.new);
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(profileChannel); };
-  }, [chat.id, chat.type, currentUser.id, supabase, otherUser?.id]);
-
-  // Обновляем свой last_seen при входе в чат
-  useEffect(() => {
-    supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', currentUser.id).then();
-  }, [currentUser.id, supabase]);
-
-  // 2. Загрузка сообщений (с подтягиванием данных того, на кого ответили)
   const fetchMessages = async () => {
     const { data } = await supabase
       .from('messages')
       .select('*, profiles(name, avatar_color), reply_to:messages!reply_to_id(text, sender_id, profiles(name))')
       .eq('chat_id', chat.id)
       .order('created_at', { ascending: true });
-      
-    if (data) {
-      const now = new Date().getTime();
-      setMessages(data.filter(m => !m.expires_at || new Date(m.expires_at).getTime() > now));
-    }
+    if (data) setMessages(data.filter(m => !m.expires_at || new Date(m.expires_at).getTime() > new Date().getTime()));
   };
 
-  // Подписка на Realtime изменения (новые, удаленные, измененные)
   useEffect(() => {
     fetchMessages();
     const channel = supabase.channel(`chat_${chat.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, () => {
-        fetchMessages();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chat.id}` }, () => fetchMessages())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [chat.id]);
 
-  // Скролл вниз при новых сообщениях
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  // 3. Отправка сообщения или сохранение редактирования
   const sendMessage = async () => {
     if (!input.trim()) return;
     const text = input;
     setInput("");
     
-    // Если мы редактируем сообщение
     if (editMsg) {
       await supabase.from('messages').update({ text, is_edited: true }).eq('id', editMsg.id);
       setEditMsg(null);
       return;
     }
 
-    // Если отправляем новое
-    const newMsgId = crypto.randomUUID();
     await supabase.from('messages').insert({ 
-      id: newMsgId, 
-      chat_id: chat.id, 
-      sender_id: currentUser.id, 
-      text,
+      id: crypto.randomUUID(), chat_id: chat.id, sender_id: currentUser.id, text,
       reply_to_id: replyTo ? replyTo.id : null 
     });
     setReplyTo(null);
   };
 
-  // 4. Действия с сообщениями
   const deleteMessage = async (msgId: string) => {
     setActiveMenuMsg(null);
     setMessages(prev => prev.filter(m => m.id !== msgId));
@@ -110,16 +76,10 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   };
 
   const pinMessage = async (msg: any) => {
-    // Снимаем закрепление со старых
     await supabase.from('messages').update({ is_pinned: false }).eq('chat_id', chat.id);
-    // Закрепляем/открепляем выбранное
     await supabase.from('messages').update({ is_pinned: !msg.is_pinned }).eq('id', msg.id);
     setActiveMenuMsg(null);
     fetchMessages();
-  };
-
-  const selectForMassAction = (msgId: string) => {
-    setSelectedMsgs(prev => prev.includes(msgId) ? prev.filter(id => id !== msgId) : [...prev, msgId]);
   };
 
   const massDelete = async () => {
@@ -128,23 +88,14 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
     setSelectedMsgs([]);
   };
 
-  // 5. Парсер форматирования (жирный, курсив, код)
   const formatText = (text: string) => {
     if (!text) return null;
-    let html = text
-      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-      .replace(/\*(.*?)\*/g, '<i>$1</i>')
-      .replace(/`(.*?)`/g, '<code class="bg-black/20 px-1 rounded text-sm font-mono">$1</code>')
-      .replace(/\n/g, '<br/>');
+    let html = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>').replace(/`(.*?)`/g, '<code>$1</code>').replace(/\n/g, '<br/>');
     return <span dangerouslySetInnerHTML={{ __html: html }} />;
   };
 
-  // Обработка долгого нажатия
   let pressTimer: any;
-  const handlePressStart = (msg: any) => {
-    if (selectedMsgs.length > 0) return; // Если в режиме выделения, не открываем меню
-    pressTimer = setTimeout(() => setActiveMenuMsg(msg), 500);
-  };
+  const handlePressStart = (msg: any) => { if (selectedMsgs.length === 0) pressTimer = setTimeout(() => setActiveMenuMsg(msg), 500); };
   const handlePressEnd = () => clearTimeout(pressTimer);
 
   const isOnline = otherUser?.last_seen ? (new Date().getTime() - new Date(otherUser.last_seen).getTime()) < 120000 : false;
@@ -152,11 +103,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
 
   return (
     <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative">
-      
-      {/* --- ШАПКА ЧАТА --- */}
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
-          // Режим массового выделения
           <div className="flex-1 flex justify-between items-center px-2">
             <span className="font-bold text-black dark:text-white">Выбрано: {selectedMsgs.length}</span>
             <div className="flex gap-2">
@@ -165,116 +113,67 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
             </div>
           </div>
         ) : (
-          // Обычный режим
           <>
             <button onClick={onBack} className="md:hidden p-1 text-2xl text-gray-700 dark:text-white">←</button>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold relative shrink-0 overflow-hidden" style={{ backgroundColor: otherUser?.avatar_color || chat.avatar_color || '#2aabee' }}>
-              {otherUser?.avatar_url || chat.avatar_url ? <img src={otherUser?.avatar_url || chat.avatar_url} className="w-full h-full object-cover" /> : (otherUser?.name || chat.name)?.[0]?.toUpperCase()}
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold relative shrink-0 overflow-hidden" style={{ backgroundColor: otherUser?.avatar_color || chat.avatar_color }}>
+              {otherUser?.avatar_url ? <img src={otherUser.avatar_url} className="w-full h-full object-cover" /> : (otherUser?.name || chat.name)?.[0]?.toUpperCase()}
               {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-[#17212b] rounded-full" />}
             </div>
             <div className="flex flex-col min-w-0">
-              <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">
-                {otherUser?.name || chat.name || 'Чат'} {chat.type === 'secret' && '🔒'}
-              </div>
-              <div className={`text-xs truncate ${isOnline ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>
-                {chat.type === 'secret' ? 'Исчезающие сообщения' : (isOnline ? 'в сети' : 'был(а) недавно')}
-              </div>
+              <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">{otherUser?.name || chat.name}</div>
+              <div className={`text-xs truncate ${isOnline ? 'text-blue-600' : 'text-gray-500'}`}>{isOnline ? 'в сети' : 'был(а) недавно'}</div>
             </div>
           </>
         )}
       </div>
 
-      {/* --- ЗАКРЕПЛЕННОЕ СООБЩЕНИЕ --- */}
       {pinnedMsg && (
-        <div className="bg-white/90 dark:bg-[#17212b]/95 backdrop-blur-md px-3 py-2 border-b border-black/10 dark:border-white/10 flex items-center gap-3 shrink-0 z-30">
+        <div className="bg-white/90 dark:bg-[#17212b]/95 px-3 py-2 border-b flex items-center gap-3 shrink-0 z-30">
           <div className="w-1 h-8 bg-blue-500 rounded-full" />
-          <div className="flex-1 min-w-0">
-            <div className="text-xs text-blue-500 font-bold">Закрепленное сообщение</div>
-            <div className="text-sm text-black dark:text-white truncate">{pinnedMsg.text || 'Медиафайл'}</div>
-          </div>
-          <button onClick={() => pinMessage(pinnedMsg)} className="text-gray-400 p-2 text-sm hover:text-black">✕</button>
+          <div className="flex-1 min-w-0"><div className="text-xs text-blue-500 font-bold">Закреплено</div><div className="text-sm text-black dark:text-white truncate">{pinnedMsg.text}</div></div>
+          <button onClick={() => pinMessage(pinnedMsg)} className="text-gray-400 p-2">✕</button>
         </div>
       )}
 
-      {/* --- СПИСОК СООБЩЕНИЙ --- */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.map((m) => {
           const isMe = m.sender_id === currentUser.id;
           const isSelected = selectedMsgs.includes(m.id);
           const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           
-          // --- РЕНДЕР ПОДАРКА (Карточка) ---
           if (m.gift) {
+            const isNFT = ['🦄', '🛸', '🏆', '💎', '🐉'].includes(m.gift);
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                <div 
-                  onClick={() => selectedMsgs.length > 0 && selectForMassAction(m.id)}
-                  onMouseDown={() => handlePressStart(m)} 
-                  onMouseUp={handlePressEnd} 
-                  onMouseLeave={handlePressEnd}
-                  onTouchStart={() => handlePressStart(m)} 
-                  onTouchEnd={handlePressEnd}
+                <div onMouseDown={() => handlePressStart(m)} onMouseUp={handlePressEnd} onTouchStart={() => handlePressStart(m)} onTouchEnd={handlePressEnd}
                   className={`relative flex flex-col items-center justify-center p-4 min-w-[160px] rounded-3xl shadow-xl border cursor-pointer select-none transition-all ${
                     isSelected ? 'border-red-500 bg-red-500/20' : 
-                    (isMe ? 'rounded-br-sm bg-gradient-to-br from-[#2b3c4f] to-[#1a2530] border-yellow-500/30' : 'rounded-bl-sm bg-gradient-to-br from-white/90 to-gray-100 dark:from-[#182533]/90 dark:to-[#111a24] border-white/20 dark:border-yellow-500/20')
-                  }`}
-                >
-                  <div className="absolute top-2 left-3 text-[10px] uppercase font-bold text-yellow-500/70 tracking-widest">Подарок</div>
-                  <div className="text-6xl my-3 drop-shadow-2xl animate-bounce">{m.gift}</div>
-                  <div className="text-[15px] font-bold text-yellow-500 mb-1">{m.text.replace('Подарил ', '')}</div>
-                  <div className={`flex items-center justify-end gap-1 text-[11px] w-full ${isMe ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {time} {isMe && <span>✓✓</span>}
-                  </div>
+                    isNFT ? 'bg-gradient-to-br from-purple-900 to-black border-purple-500/50 shadow-[0_0_20px_rgba(168,85,247,0.4)]' : (isMe ? 'rounded-br-sm bg-gradient-to-br from-[#2b3c4f] to-[#1a2530] border-yellow-500/30' : 'rounded-bl-sm bg-gradient-to-br from-white/90 to-gray-100 dark:from-[#182533]/90 dark:to-[#111a24] border-white/20 dark:border-yellow-500/20')
+                  }`}>
+                  <div className={`absolute top-2 left-3 text-[10px] uppercase font-bold tracking-widest ${isNFT ? 'text-purple-400' : 'text-yellow-500/70'}`}>{isNFT ? '💎 Уникальный NFT' : 'Подарок'}</div>
+                  <div className={`text-6xl my-3 drop-shadow-2xl ${isNFT ? 'animate-pulse' : 'animate-bounce'}`}>{m.gift}</div>
+                  <div className={`text-[15px] font-bold mb-1 ${isNFT ? 'text-purple-300' : 'text-yellow-500'}`}>{m.text.replace('Подарил ', '')}</div>
+                  <div className={`flex items-center justify-end gap-1 text-[11px] w-full ${isMe ? 'text-gray-400' : 'text-gray-500'}`}>{time} {isMe && <span>✓✓</span>}</div>
                 </div>
               </div>
             );
           }
 
-          // --- РЕНДЕР ОБЫЧНОГО СООБЩЕНИЯ ---
           return (
             <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-              <div 
-                onClick={() => selectedMsgs.length > 0 && selectForMassAction(m.id)}
-                onMouseDown={() => handlePressStart(m)} 
-                onMouseUp={handlePressEnd} 
-                onMouseLeave={handlePressEnd}
-                onTouchStart={() => handlePressStart(m)} 
-                onTouchEnd={handlePressEnd}
-                className={`relative max-w-[85%] md:max-w-[60%] p-2 rounded-2xl shadow-sm border backdrop-blur-md transition-all cursor-pointer ${
-                  isSelected ? 'border-red-500 bg-red-500/20' : 
-                  (isMe ? 'bg-blue-500/90 text-white rounded-br-sm border-transparent' : 'bg-white/80 dark:bg-[#182533]/90 text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10')
-                }`}>
-                
-                {/* Имя отправителя (если это не я) */}
-                {!isMe && <div className="text-xs font-bold text-blue-500 mb-1">{m.profiles?.name || 'Собеседник'}</div>}
-                
-                {/* Блок ответа на сообщение */}
+              <div onClick={() => selectedMsgs.length > 0 && setSelectedMsgs(p => p.includes(m.id) ? p.filter(i => i !== m.id) : [...p, m.id])}
+                onMouseDown={() => handlePressStart(m)} onMouseUp={handlePressEnd} onTouchStart={() => handlePressStart(m)} onTouchEnd={handlePressEnd}
+                className={`relative max-w-[85%] md:max-w-[60%] p-2 rounded-2xl shadow-sm border backdrop-blur-md transition-all cursor-pointer ${isSelected ? 'border-red-500 bg-red-500/20' : (isMe ? 'bg-blue-500/90 text-white rounded-br-sm border-transparent' : 'bg-white/80 dark:bg-[#182533]/90 text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10')}`}>
+                {!isMe && <div className="text-xs font-bold text-blue-500 mb-1">{m.profiles?.name}</div>}
                 {m.reply_to && (
                   <div className={`border-l-4 border-blue-400 pl-2 mb-2 py-1 rounded-r-md text-sm ${isMe ? 'bg-blue-600/50' : 'bg-black/5 dark:bg-white/5'}`}>
-                    <div className="font-bold text-[11px] text-blue-200 dark:text-blue-400">
-                      {m.reply_to.sender_id === currentUser.id ? 'Вы' : m.reply_to.profiles?.name}
-                    </div>
+                    <div className="font-bold text-[11px] text-blue-200 dark:text-blue-400">{m.reply_to.sender_id === currentUser.id ? 'Вы' : m.reply_to.profiles?.name}</div>
                     <div className="truncate opacity-80">{m.reply_to.text}</div>
                   </div>
                 )}
-
-                {/* Медиа */}
-                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover cursor-pointer" onClick={() => window.open(m.file_url, '_blank')} />}
-                {m.file_type === 'file' && (
-                  <a href={m.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isMe ? 'bg-blue-600/50' : 'bg-gray-200/50 dark:bg-gray-800/50'}`}>
-                    <span className="text-2xl">📄</span><span className="text-sm underline truncate">{m.text.replace('📎 ', '')}</span>
-                  </a>
-                )}
-                
-                {/* Текст с форматированием */}
+                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover" />}
                 {!m.file_type && <div className="text-[15px] leading-snug break-words px-1 pb-1">{formatText(m.text)}</div>}
-
-                {/* Время и галочки */}
-                <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
-                  {m.is_pinned && <span>📌</span>}
-                  {m.is_edited && <span className="italic">изм.</span>}
-                  {time} {isMe && <span>✓✓</span>}
-                </div>
+                <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-blue-100' : 'text-gray-500'}`}>{m.is_pinned && '📌'}{m.is_edited && 'изм.'} {time} {isMe && <span>✓✓</span>}</div>
               </div>
             </div>
           );
@@ -282,88 +181,45 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         <div ref={endRef} />
       </div>
 
-      {/* --- МЕНЮ ДЕЙСТВИЙ (Bottom Sheet) --- */}
       {activeMenuMsg && (
         <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
-            <div className="w-12 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mb-4"></div>
+            <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4"></div>
             <div className="grid grid-cols-4 gap-2 mb-4">
-              <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">↩️</span><span className="text-xs text-black dark:text-white">Ответить</span>
-              </button>
-              <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">➡️</span><span className="text-xs text-black dark:text-white">Переслать</span>
-              </button>
-              
-              {/* Изменять можно только текст, не подарки */}
+              <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">↩️</span><span className="text-xs">Ответить</span></button>
+              <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">➡️</span><span className="text-xs">Переслать</span></button>
               {activeMenuMsg.sender_id === currentUser.id && !activeMenuMsg.gift && (
-                <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                  <span className="text-2xl mb-1">✏️</span><span className="text-xs text-black dark:text-white">Изменить</span>
-                </button>
+                <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">✏️</span><span className="text-xs">Изменить</span></button>
               )}
-              
-              <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">📋</span><span className="text-xs text-black dark:text-white">Копировать</span>
-              </button>
-              <button onClick={() => pinMessage(activeMenuMsg)} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">📌</span><span className="text-xs text-black dark:text-white">{activeMenuMsg.is_pinned ? 'Открепить' : 'Закрепить'}</span>
-              </button>
-              <button onClick={() => { selectForMassAction(activeMenuMsg.id); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-                <span className="text-2xl mb-1">☑️</span><span className="text-xs text-black dark:text-white">Выбрать</span>
-              </button>
-              <button onClick={() => deleteMessage(activeMenuMsg.id)} className="flex flex-col items-center p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl text-red-500">
-                <span className="text-2xl mb-1">🗑</span><span className="text-xs">Удалить</span>
-              </button>
+              <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📋</span><span className="text-xs">Копировать</span></button>
+              <button onClick={() => pinMessage(activeMenuMsg)} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📌</span><span className="text-xs">{activeMenuMsg.is_pinned ? 'Открепить' : 'Закрепить'}</span></button>
+              <button onClick={() => deleteMessage(activeMenuMsg.id)} className="flex flex-col items-center p-2 hover:bg-red-50 rounded-xl text-red-500"><span className="text-2xl mb-1">🗑</span><span className="text-xs">Удалить</span></button>
             </div>
-            <button onClick={() => setActiveMenuMsg(null)} className="w-full py-3 bg-gray-100 dark:bg-white/5 rounded-xl font-medium text-black dark:text-white">Отмена</button>
+            <button onClick={() => setActiveMenuMsg(null)} className="w-full py-3 bg-gray-100 dark:bg-white/5 rounded-xl font-medium">Отмена</button>
           </div>
         </div>
       )}
 
-      {/* --- ПОЛЕ ВВОДА --- */}
-      <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 dark:border-white/10 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
-        
-        {/* Превью ответа */}
+      <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         {replyTo && !editMsg && (
-          <div className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-xl border-l-4 border-blue-500">
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-blue-500">Ответ: {replyTo.profiles?.name || 'Собеседник'}</div>
-              <div className="text-sm text-gray-600 dark:text-gray-300 truncate">{replyTo.text}</div>
-            </div>
+          <div className="flex items-center gap-2 bg-black/5 p-2 rounded-xl border-l-4 border-blue-500">
+            <div className="flex-1 min-w-0"><div className="text-xs font-bold text-blue-500">Ответ: {replyTo.profiles?.name}</div><div className="text-sm truncate">{replyTo.text}</div></div>
             <button onClick={() => setReplyTo(null)} className="text-gray-500 px-2">✕</button>
           </div>
         )}
-        
-        {/* Превью редактирования */}
         {editMsg && (
-          <div className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-xl border-l-4 border-green-500">
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-green-500">Редактирование</div>
-              <div className="text-sm text-gray-600 dark:text-gray-300 truncate">{editMsg.text}</div>
-            </div>
+          <div className="flex items-center gap-2 bg-black/5 p-2 rounded-xl border-l-4 border-green-500">
+            <div className="flex-1 min-w-0"><div className="text-xs font-bold text-green-500">Редактирование</div><div className="text-sm truncate">{editMsg.text}</div></div>
             <button onClick={() => { setEditMsg(null); setInput(''); }} className="text-gray-500 px-2">✕</button>
           </div>
         )}
-
         <div className="flex items-end gap-2">
-          <input type="file" ref={fileInputRef} onChange={() => {}} className="hidden" />
-          <button onClick={() => fileInputRef.current?.click()} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-xl">📎</button>
-          <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-xl">🎁</button>
-          <textarea 
-            value={input} 
-            onChange={e => setInput(e.target.value)} 
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} 
-            placeholder="Сообщение..." 
-            rows={1} 
-            className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" 
-          />
-          <button onClick={sendMessage} className={`p-3 rounded-full text-white shrink-0 transition shadow-lg ${editMsg ? 'bg-green-500' : 'bg-blue-500'}`}>
-            {editMsg ? '✓' : '➤'}
-          </button>
+          <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 text-yellow-600 shrink-0 text-xl">🎁</button>
+          <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] dark:text-white" />
+          <button onClick={sendMessage} className={`p-3 rounded-full text-white shrink-0 transition shadow-lg ${editMsg ? 'bg-green-500' : 'bg-blue-500'}`}>{editMsg ? '✓' : '➤'}</button>
         </div>
       </div>
 
-      {/* Модалки */}
       {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} receiverId={otherUser?.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} />}
       {forwardMsg && <ForwardModal chats={allChats} currentUser={currentUser} messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} onForwarded={fetchMessages} />}
     </div>
