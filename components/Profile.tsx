@@ -46,14 +46,17 @@ export default function Profile({ user, onClose, onOpenNewChat, onOpenSettings, 
             </div>
           )}
           <div className="h-px bg-black/5 dark:bg-white/10 mx-4 my-2" />
+          
           <div className="flex items-center justify-between px-5 py-3 hover:bg-black/5 cursor-pointer" onClick={toggleTheme}>
             <div className="flex items-center gap-4"><span className="text-xl">{isDark ? '🌙' : '☀️'}</span><span className="text-[15px] font-medium">Тема</span></div>
             <div className={`w-10 h-6 rounded-full p-1 transition-colors ${isDark ? 'bg-blue-500' : 'bg-gray-300'}`}><div className={`w-4 h-4 rounded-full bg-white transform transition-transform ${isDark ? 'translate-x-4' : 'translate-x-0'}`} /></div>
           </div>
           
           <button onClick={() => { onClose(); onOpenTheme(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">🎨</span><span className="text-[15px] font-medium">Оформление</span></button>
-          <button onClick={() => { onClose(); onOpenPrivacy(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">🔒</span><span className="text-[15px] font-medium">Конфиденциальность</span></button>
           
+          {/* КНОПКА КОНФИДЕНЦИАЛЬНОСТИ В ЛЕВОЙ ПАНЕЛИ */}
+          <button onClick={() => { onClose(); onOpenPrivacy(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">🔒</span><span className="text-[15px] font-medium text-black dark:text-white">Конфиденциальность</span></button>
+
           {user?.is_admin && <button onClick={() => { onClose(); onOpenAdmin(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-red-500/10 text-left"><span className="text-xl">👑</span><span className="text-[15px] font-bold text-red-500">Админ-панель</span></button>}
           <button onClick={() => { onClose(); onOpenCreateChat(); }} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">👥</span><span className="text-[15px] font-medium">Создать группу / канал</span></button>
           <button onClick={onOpenSettings} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-black/5 text-left"><span className="text-xl">⚙️</span><span className="text-[15px] font-medium">Настройки</span></button>
