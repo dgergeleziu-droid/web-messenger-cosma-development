@@ -36,9 +36,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
   const timerRef = useRef<any>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
 
-  // --- ПРОСМОТР ВИДЕО/ФОТО ---
-  const [fullscreenMedia, setFullscreenMedia] = useState<{ url: string, type: 'video_note' | 'image' } | null>(null);
-
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
@@ -282,15 +279,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
     return user.status_emoji || '💎';
   }
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  }
-
   return (
-    // ГЛАВНЫЙ КОНТЕЙНЕР - строгая колонка
-    <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] overflow-hidden relative">
       
       {/* 1. ШАПКА */}
       <div className="flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
@@ -323,7 +313,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         )}
       </div>
 
-      {/* 2. ЗАКРЕПЛЕННОЕ СООБЩЕНИЕ */}
+      {/* 2. ЗАКРЕПЛЕННОЕ */}
       {pinnedMsg && (
         <div className="bg-white/90 dark:bg-[#17212b]/95 px-3 py-2 border-b flex items-center gap-3 shrink-0 z-30">
           <div className="w-1 h-8 bg-blue-500 rounded-full" />
@@ -332,12 +322,10 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       )}
 
-      {/* 3. СПИСОК СООБЩЕНИЙ (занимает всё свободное место) */}
+      {/* 3. СПИСОК СООБЩЕНИЙ */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.length === 0 && (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            Нет сообщений. Напишите первое!
-          </div>
+          <div className="flex-1 flex items-center justify-center text-gray-500">Нет сообщений. Напишите первое!</div>
         )}
 
         {messages.map((m) => {
@@ -385,12 +373,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
                     <span className="text-xl">▶️</span>
                   </div>
                   <div className="flex flex-col gap-1 w-32">
-                    <div className="h-1.5 w-full bg-white/30 rounded-full overflow-hidden">
-                      <div className="h-full bg-white w-1/3"></div>
-                    </div>
-                    <div className="flex justify-between text-[10px] opacity-70">
-                      <span>0:00</span><span>0:12</span>
-                    </div>
+                    <div className="h-1.5 w-full bg-white/30 rounded-full overflow-hidden"><div className="h-full bg-white w-1/3"></div></div>
+                    <div className="flex justify-between text-[10px] opacity-70"><span>0:00</span><span>0:12</span></div>
                   </div>
                   <div className={`flex items-center justify-end gap-1 text-[11px] select-none ${isMe ? 'text-white/70' : 'text-gray-500'}`}>{time} {isMe && <span>✓✓</span>}</div>
                 </div>
@@ -401,13 +385,9 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
           if (m.file_type === 'video_note') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                <div 
-                  onClick={() => setFullscreenMedia({ url: m.file_url, type: 'video_note' })}
-                  className={`relative w-48 h-48 rounded-full overflow-hidden shadow-lg cursor-pointer border-2 bg-black ${isMe ? 'border-blue-400' : 'border-gray-300'}`}>
-                  <video src={m.file_url} className="w-full h-full object-cover" playsInline style={{ transform: 'scaleX(-1)' }} />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                    <div className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white text-3xl">▶</div>
-                  </div>
+                {/* Убрали onClick, теперь видео просто играет внутри */}
+                <div className={`relative w-48 h-48 rounded-full overflow-hidden shadow-lg border-2 bg-black ${isMe ? 'border-blue-400' : 'border-gray-300'}`}>
+                  <video src={m.file_url} className="w-full h-full object-cover" playsInline controls style={{ transform: 'scaleX(-1)' }} />
                   <div className={`absolute bottom-2 left-0 right-0 text-center text-[10px] text-white font-bold drop-shadow-md`}>{time}</div>
                 </div>
               </div>
@@ -422,22 +402,18 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
                   isSelected ? 'border-red-500 bg-red-500/20' : 
                   (isMe ? `${bubbleMe} text-white rounded-br-sm border-transparent` : `${bubbleOther} text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10`)
                 }`}>
-                
                 {!isMe && (
                   <div className="text-xs font-bold text-blue-500 mb-1 hover:underline cursor-pointer flex items-center gap-1" onClick={(e) => { e.stopPropagation(); openProfile(m.sender_id); }}>
                     {m.profiles?.name} {getStatusEmoji(m.profiles)}
                   </div>
                 )}
-
-                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover cursor-pointer" onClick={() => setFullscreenMedia({ url: m.file_url, type: 'image' })} />}
+                {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover" />}
                 {m.file_type === 'file' && (
                   <a href={m.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-2 rounded-xl mb-1 ${isMe ? 'bg-blue-600/50' : 'bg-black/5 dark:bg-white/10'}`}>
                     <span className="text-2xl">📄</span><span className="text-sm underline truncate">{m.text.replace('📎 ', '')}</span>
                   </a>
                 )}
-
                 {!m.file_type && <div className="text-[15px] leading-snug break-words px-1 pb-1">{formatText(m.text)}</div>}
-                
                 <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-white/70' : 'text-gray-500'}`}>
                   {m.is_pinned && '📌'}{m.is_edited && 'изм.'} {time} {isMe && <span>✓✓</span>}
                 </div>
@@ -462,18 +438,12 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             <button onClick={() => { setEditMsg(null); setInput(''); }} className="text-gray-500 px-2">✕</button>
           </div>
         )}
-        
         <div className="flex items-end gap-1">
           <input type="file" ref={fileInputRef} onChange={uploadFile} className="hidden" accept="image/*,application/pdf,.doc,.docx,.zip" />
-          
           <button onClick={() => setShowPicker(!showPicker)} className={`p-2.5 rounded-full shrink-0 text-lg transition ${showPicker ? 'bg-blue-500/20 text-blue-500' : 'bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-black/10'}`}>😊</button>
-          
           <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 shrink-0 text-lg hover:bg-black/10 transition">{uploading ? '⏳' : '📎'}</button>
-          
           <button onClick={() => setShowGifts(true)} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-lg">🎁</button>
-          
           <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-3xl px-4 py-3 min-h-[44px] outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" />
-          
           {!input.trim() ? (
             <div className="flex shrink-0">
               <button onClick={() => startRecording('voice')} className="p-2.5 rounded-full bg-black/5 dark:bg-white/10 text-blue-500 text-lg mr-1">🎤</button>
@@ -485,61 +455,35 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       </div>
 
-      {/* 5. МОДАЛКИ (поверх всего) */}
+      {/* 5. МОДАЛКИ (Здесь, в конце, чтобы не ломали flex) */}
       {activeMenuMsg && (
-        <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
-            <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4"></div>
-            <div className="grid grid-cols-4 gap-2 mb-4">
-              <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">↩️</span><span className="text-xs text-black dark:text-white">Ответить</span></button>
-              <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">➡️</span><span className="text-xs text-black dark:text-white">Переслать</span></button>
-              {activeMenuMsg.sender_id === currentUser.id && !activeMenuMsg.gift && activeMenuMsg.file_type !== 'sticker' && activeMenuMsg.file_type !== 'video_note' && activeMenuMsg.file_type !== 'voice' && (
-                <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">✏️</span><span className="text-xs text-black dark:text-white">Изменить</span></button>
-              )}
-              <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📋</span><span className="text-xs text-black dark:text-white">Копировать</span></button>
-              <button onClick={() => pinMessage(activeMenuMsg)} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📌</span><span className="text-xs text-black dark:text-white">{activeMenuMsg.is_pinned ? 'Открепить' : 'Закрепить'}</span></button>
-              <button onClick={() => deleteMessage(activeMenuMsg.id)} className="flex flex-col items-center p-2 hover:bg-red-50 rounded-xl text-red-500"><span className="text-2xl mb-1">🗑</span><span className="text-xs">Удалить</span></button>
+             <div className="grid grid-cols-4 gap-2 mb-4">
+              <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl text-black dark:text-white">↩️ Ответ</button>
+              <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl text-black dark:text-white">➡️ Переслать</button>
+              <button onClick={() => deleteMessage(activeMenuMsg.id)} className="flex flex-col items-center p-2 hover:bg-red-50 rounded-xl text-red-500">🗑 Удалить</button>
             </div>
-            <button onClick={() => setActiveMenuMsg(null)} className="w-full py-3 bg-gray-100 dark:bg-white/5 rounded-xl font-medium text-black dark:text-white">Отмена</button>
           </div>
         </div>
       )}
 
       {recordingMode === 'video_note' && (
-        <div className="absolute inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center">
-          <div className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-blue-500 shadow-[0_0_50px_rgba(59,130,246,0.5)]">
+        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center">
+          <div className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-blue-500">
             <video ref={videoPreviewRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
-            <div className="absolute bottom-4 left-0 right-0 text-center text-white font-bold text-xl drop-shadow-md">
-              {formatTime(recordingTime)} / 0:15
-            </div>
+            <div className="absolute bottom-4 left-0 right-0 text-center text-white font-bold text-xl">{Math.floor(recordingTime/60)}:{String(recordingTime%60).padStart(2, '0')}</div>
           </div>
           <div className="flex gap-6 mt-10">
-            <button onClick={cancelRecording} className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center text-white text-2xl shadow-lg">✕</button>
-            <button onClick={stopRecording} className="w-14 h-14 bg-blue-500 rounded-full flex items-center justify-center text-white text-2xl shadow-lg">✓</button>
+            <button onClick={cancelRecording} className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center text-white text-2xl">✕</button>
+            <button onClick={stopRecording} className="w-14 h-14 bg-blue-500 rounded-full flex items-center justify-center text-white text-2xl">✓</button>
           </div>
-        </div>
-      )}
-
-      {fullscreenMedia && (
-        <div className="absolute inset-0 z-[200] bg-black flex items-center justify-center" onClick={() => setFullscreenMedia(null)}>
-          {fullscreenMedia.type === 'image' ? (
-            <img src={fullscreenMedia.url} className="w-full h-full object-contain" />
-          ) : (
-            <video src={fullscreenMedia.url} autoPlay controls playsInline className="w-full h-full object-contain" style={{ transform: 'scaleX(-1)' }} />
-          )}
-          <button className="absolute top-6 right-6 text-white text-3xl p-2" onClick={() => setFullscreenMedia(null)}>✕</button>
         </div>
       )}
 
       {showPicker && (
-        <StickerEmojiPicker 
-          currentUser={currentUser} 
-          onSelectEmoji={(emoji: string) => setInput(prev => prev + emoji)} 
-          onSelectSticker={sendSticker}
-          onClose={() => setShowPicker(false)}
-        />
+        <StickerEmojiPicker currentUser={currentUser} onSelectEmoji={(emoji: string) => setInput(prev => prev + emoji)} onSelectSticker={sendSticker} onClose={() => setShowPicker(false)} />
       )}
-
       {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} receiverId={otherUser?.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} onUpdateUser={onUpdateUser} />}
       {forwardMsg && <ForwardModal chats={allChats} currentUser={currentUser} messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} onForwarded={fetchMessages} />}
       {profileUser && <UserProfileModal user={profileUser} currentUser={currentUser} onClose={() => setProfileUser(null)} onSendMessage={() => {}} />}
