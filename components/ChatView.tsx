@@ -3,12 +3,14 @@ import { useState, useRef, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import GiftModal from "./GiftModal";
 import ForwardModal from "./ForwardModal";
+import UserProfileModal from "./UserProfileModal";
 
 export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [showGifts, setShowGifts] = useState(false);
   const [otherUser, setOtherUser] = useState<any>(null);
+  const [profileUser, setProfileUser] = useState<any>(null); // Стейт для профиля
   
   const [activeMenuMsg, setActiveMenuMsg] = useState<any>(null);
   const [replyTo, setReplyTo] = useState<any>(null);
@@ -16,7 +18,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [forwardMsg, setForwardMsg] = useState<any>(null);
   const [selectedMsgs, setSelectedMsgs] = useState<string[]>([]);
   
-  // Настройки оформления
   const [customBg, setCustomBg] = useState<string | null>(null)
   const [bubbleMe, setBubbleMe] = useState('bg-blue-500')
   const [bubbleOther, setBubbleOther] = useState('bg-white dark:bg-[#182533]')
@@ -24,7 +25,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const endRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
-  // Загружаем настройки оформления
   useEffect(() => {
     setCustomBg(localStorage.getItem('cosma-chat-bg-image'))
     setBubbleMe(localStorage.getItem('cosma-bubble-me') || 'bg-blue-500')
@@ -47,7 +47,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const fetchMessages = async () => {
     const { data } = await supabase
       .from('messages')
-      .select('*, profiles(name, avatar_color), reply_to:messages!reply_to_id(text, sender_id, profiles(name))')
+      .select('*, profiles(name, avatar_color, avatar_url, id, is_premium, username), reply_to:messages!reply_to_id(text, sender_id, profiles(name))')
       .eq('chat_id', chat.id)
       .order('created_at', { ascending: true });
     if (data) setMessages(data.filter(m => !m.expires_at || new Date(m.expires_at).getTime() > new Date().getTime()));
@@ -113,12 +113,23 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const isOnline = otherUser?.last_seen ? (new Date().getTime() - new Date(otherUser.last_seen).getTime()) < 120000 : false;
   const pinnedMsg = messages.find(m => m.is_pinned);
 
+  // Загрузка полного профиля при клике
+  const openProfile = async (userId: string) => {
+    if (userId === currentUser.id) {
+      setProfileUser(currentUser);
+      return;
+    }
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    if (data) setProfileUser(data);
+  };
+
   return (
     <div 
       className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative bg-cover bg-center"
       style={customBg ? { backgroundImage: `url(${customBg})` } : {}}
     >
       
+      {/* ШАПКА ЧАТА (Кликабельная) */}
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
           <div className="flex-1 flex justify-between items-center px-2">
@@ -131,13 +142,20 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
         ) : (
           <>
             <button onClick={onBack} className="md:hidden p-1 text-2xl text-gray-700 dark:text-white">←</button>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold relative shrink-0 overflow-hidden" style={{ backgroundColor: otherUser?.avatar_color || chat.avatar_color }}>
-              {otherUser?.avatar_url ? <img src={otherUser.avatar_url} className="w-full h-full object-cover" /> : (otherUser?.name || chat.name)?.[0]?.toUpperCase()}
-              {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-[#17212b] rounded-full" />}
-            </div>
-            <div className="flex flex-col min-w-0">
-              <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">{otherUser?.name || chat.name}</div>
-              <div className={`text-xs truncate ${isOnline ? 'text-blue-600' : 'text-gray-500'}`}>{isOnline ? 'в сети' : 'был(а) недавно'}</div>
+            <div 
+              className="flex items-center gap-3 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 p-1 rounded-xl transition -ml-1"
+              onClick={() => openProfile(otherUser?.id || chat.id)}
+            >
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold relative shrink-0 overflow-hidden" style={{ backgroundColor: otherUser?.avatar_color || chat.avatar_color }}>
+                {otherUser?.avatar_url ? <img src={otherUser.avatar_url} className="w-full h-full object-cover" /> : (otherUser?.name || chat.name)?.[0]?.toUpperCase()}
+                {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-[#17212b] rounded-full" />}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <div className="font-semibold text-black dark:text-white flex items-center gap-1 truncate">
+                  {otherUser?.name || chat.name} {otherUser?.is_premium && '💎'}
+                </div>
+                <div className={`text-xs truncate ${isOnline ? 'text-blue-600' : 'text-gray-500'}`}>{isOnline ? 'в сети' : 'был(а) недавно'}</div>
+              </div>
             </div>
           </>
         )}
@@ -183,7 +201,17 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
                   isSelected ? 'border-red-500 bg-red-500/20' : 
                   (isMe ? `${bubbleMe} text-white rounded-br-sm border-transparent` : `${bubbleOther} text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10`)
                 }`}>
-                {!isMe && <div className="text-xs font-bold text-blue-500 mb-1">{m.profiles?.name}</div>}
+                
+                {/* Клик по имени в сообщении открывает профиль */}
+                {!isMe && (
+                  <div 
+                    className="text-xs font-bold text-blue-500 mb-1 hover:underline cursor-pointer"
+                    onClick={(e) => { e.stopPropagation(); openProfile(m.sender_id); }}
+                  >
+                    {m.profiles?.name} {m.profiles?.is_premium && '💎'}
+                  </div>
+                )}
+
                 {m.reply_to && (
                   <div className={`border-l-4 border-blue-400 pl-2 mb-2 py-1 rounded-r-md text-sm ${isMe ? 'bg-black/20' : 'bg-black/5'}`}>
                     <div className="font-bold text-[11px] opacity-80">{m.reply_to.sender_id === currentUser.id ? 'Вы' : m.reply_to.profiles?.name}</div>
@@ -241,6 +269,9 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
 
       {showGifts && <GiftModal currentUser={currentUser} chatId={chat.id} receiverId={otherUser?.id} onClose={() => setShowGifts(false)} onGiftSent={fetchMessages} />}
       {forwardMsg && <ForwardModal chats={allChats} currentUser={currentUser} messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} onForwarded={fetchMessages} />}
+      
+      {/* Модалка профиля */}
+      {profileUser && <UserProfileModal user={profileUser} currentUser={currentUser} onClose={() => setProfileUser(null)} onSendMessage={() => {}} />}
     </div>
   );
 }
