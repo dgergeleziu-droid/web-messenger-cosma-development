@@ -157,7 +157,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         
         const { error } = await supabase.storage.from('chat_media').upload(filePath, blob);
         if (!error) {
-          const { data } = await supabase.storage.from('chat_media').getPublicUrl(filePath);
+          const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
           await supabase.from('messages').insert({
             id: crypto.randomUUID(), chat_id: chat.id, sender_id: currentUser.id,
             text: mode === 'voice' ? 'Голосовое сообщение' : 'Видеосообщение',
@@ -460,7 +460,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       </div>
 
-      {/* 5. МОДАЛКИ (вынесены в fixed, чтобы не ломать flex) */}
+      {/* 5. МОДАЛКИ (Вынесены в fixed, чтобы не влиять на основной поток) */}
       {activeMenuMsg && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
