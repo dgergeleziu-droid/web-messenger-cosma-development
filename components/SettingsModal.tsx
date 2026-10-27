@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 const FREE_EMOJIS = ['', '😎', '🔥']
 const PREMIUM_EMOJIS = ['', '😎', '🔥', '🍕', '🎧', '💻', '🎮', '🚀', '🌙', '☕', '💎', '🦄']
 
-export default function SettingsModal({ currentUser, onClose, onUpdate }: any) {
+export default function SettingsModal({ currentUser, onClose, onUpdate, onOpenPrivacy }: any) {
   const [name, setName] = useState(currentUser.name || '')
   const [username, setUsername] = useState(currentUser.username || '')
   const [phone, setPhone] = useState(currentUser.phone || '')
@@ -97,9 +97,22 @@ export default function SettingsModal({ currentUser, onClose, onUpdate }: any) {
           )}
         </div>
 
-        <button onClick={handleSave} disabled={loading || uploading} className="w-full bg-blue-500 text-white rounded-xl py-3 font-semibold hover:bg-blue-600 transition disabled:opacity-50 shadow-lg">
+        <button onClick={handleSave} disabled={loading || uploading} className="w-full bg-blue-500 text-white rounded-xl py-3 font-semibold hover:bg-blue-600 transition disabled:opacity-50 shadow-lg mb-4">
           {loading ? 'Сохранение...' : 'Сохранить'}
         </button>
+
+        {/* НОВАЯ КНОПКА КОНФИДЕНЦИАЛЬНОСТИ */}
+        <button 
+          onClick={() => { onClose(); onOpenPrivacy(); }} 
+          className="w-full flex items-center justify-between px-4 py-3 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-xl transition"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🔒</span>
+            <span className="text-[15px] font-medium text-black dark:text-white">Конфиденциальность</span>
+          </div>
+          <span className="text-gray-400">›</span>
+        </button>
+
       </div>
     </div>
   )
