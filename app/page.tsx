@@ -190,6 +190,7 @@ export default function Home() {
       
       <div className="flex h-full w-full max-w-[1600px] mx-auto z-10 p-0 md:p-4 gap-4">
         
+        {/* Левая панель */}
         <div className={`w-full md:w-[380px] shrink-0 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/60 dark:bg-[#17212b]/60 ${activeChat ? "hidden md:block" : "block"}`}>
           <ChatList 
             chats={chats} 
@@ -201,7 +202,8 @@ export default function Home() {
           />
         </div>
 
-        <div className={`flex-1 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/40 dark:bg-black/20 ${activeChat ? "block" : "hidden md:flex md:items-center md:justify-center"}`}>
+        {/* Правая панель (Чат) — тут добавлен flex flex-col для растягивания */}
+        <div className={`flex-1 h-full flex flex-col rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/40 dark:bg-black/20 ${activeChat ? "" : "hidden md:flex md:items-center md:justify-center"}`}>
           {activeChat ? (
             <ChatView 
               chat={activeChat} 
