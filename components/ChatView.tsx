@@ -157,7 +157,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         
         const { error } = await supabase.storage.from('chat_media').upload(filePath, blob);
         if (!error) {
-          const { data } = await supabase.storage.from('chat_media').getPublicUrl(filePath);
+          const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
           await supabase.from('messages').insert({
             id: crypto.randomUUID(), chat_id: chat.id, sender_id: currentUser.id,
             text: mode === 'voice' ? 'Голосовое сообщение' : 'Видеосообщение',
@@ -286,7 +286,11 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
   }
 
   return (
-    <div className="flex flex-col w-full h-full bg-[#e6ebee] dark:bg-[#0e1621] overflow-hidden relative">
+    // ЖЕСТКАЯ ВЕРСТКА: inline-стили, которые не зависят от Tailwind
+    <div 
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', position: 'relative' }}
+      className="bg-[#e6ebee] dark:bg-[#0e1621]"
+    >
       
       {/* 1. ШАПКА */}
       <div className="flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
@@ -328,8 +332,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       )}
 
-      {/* 3. ЛЕНТА СООБЩЕНИЙ (min-h-0 критически важен) */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-2 bg-[#e6ebee] dark:bg-[#0e1621]">
+      {/* 3. ЛЕНТА СООБЩЕНИЙ */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }} className="p-4 flex flex-col gap-2 bg-[#e6ebee] dark:bg-[#0e1621]">
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center text-gray-500">Нет сообщений. Напишите первое!</div>
         )}
@@ -472,7 +476,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       </div>
 
-      {/* 5. МОДАЛКИ (fixed, чтобы не ломать flex) */}
+      {/* 5. МОДАЛКИ */}
       {activeMenuMsg && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
