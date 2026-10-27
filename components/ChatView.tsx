@@ -16,8 +16,20 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const [forwardMsg, setForwardMsg] = useState<any>(null);
   const [selectedMsgs, setSelectedMsgs] = useState<string[]>([]);
   
+  // Настройки оформления
+  const [customBg, setCustomBg] = useState<string | null>(null)
+  const [bubbleMe, setBubbleMe] = useState('bg-blue-500')
+  const [bubbleOther, setBubbleOther] = useState('bg-white dark:bg-[#182533]')
+
   const endRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
+
+  // Загружаем настройки оформления
+  useEffect(() => {
+    setCustomBg(localStorage.getItem('cosma-chat-bg-image'))
+    setBubbleMe(localStorage.getItem('cosma-bubble-me') || 'bg-blue-500')
+    setBubbleOther(localStorage.getItem('cosma-bubble-other') || 'bg-white dark:bg-[#182533]')
+  }, [])
 
   useEffect(() => {
     const fetchOtherUser = async () => {
@@ -102,7 +114,11 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
   const pinnedMsg = messages.find(m => m.is_pinned);
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative">
+    <div 
+      className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] relative bg-cover bg-center"
+      style={customBg ? { backgroundImage: `url(${customBg})` } : {}}
+    >
+      
       <div className="sticky top-0 flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
           <div className="flex-1 flex justify-between items-center px-2">
@@ -163,17 +179,20 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
             <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
               <div onClick={() => selectedMsgs.length > 0 && setSelectedMsgs(p => p.includes(m.id) ? p.filter(i => i !== m.id) : [...p, m.id])}
                 onMouseDown={() => handlePressStart(m)} onMouseUp={handlePressEnd} onTouchStart={() => handlePressStart(m)} onTouchEnd={handlePressEnd}
-                className={`relative max-w-[85%] md:max-w-[60%] p-2 rounded-2xl shadow-sm border backdrop-blur-md transition-all cursor-pointer ${isSelected ? 'border-red-500 bg-red-500/20' : (isMe ? 'bg-blue-500/90 text-white rounded-br-sm border-transparent' : 'bg-white/80 dark:bg-[#182533]/90 text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10')}`}>
+                className={`relative max-w-[85%] md:max-w-[60%] p-2 rounded-2xl shadow-sm border backdrop-blur-md transition-all cursor-pointer ${
+                  isSelected ? 'border-red-500 bg-red-500/20' : 
+                  (isMe ? `${bubbleMe} text-white rounded-br-sm border-transparent` : `${bubbleOther} text-black dark:text-white rounded-bl-sm border-white/20 dark:border-white/10`)
+                }`}>
                 {!isMe && <div className="text-xs font-bold text-blue-500 mb-1">{m.profiles?.name}</div>}
                 {m.reply_to && (
-                  <div className={`border-l-4 border-blue-400 pl-2 mb-2 py-1 rounded-r-md text-sm ${isMe ? 'bg-blue-600/50' : 'bg-black/5 dark:bg-white/5'}`}>
-                    <div className="font-bold text-[11px] text-blue-200 dark:text-blue-400">{m.reply_to.sender_id === currentUser.id ? 'Вы' : m.reply_to.profiles?.name}</div>
+                  <div className={`border-l-4 border-blue-400 pl-2 mb-2 py-1 rounded-r-md text-sm ${isMe ? 'bg-black/20' : 'bg-black/5'}`}>
+                    <div className="font-bold text-[11px] opacity-80">{m.reply_to.sender_id === currentUser.id ? 'Вы' : m.reply_to.profiles?.name}</div>
                     <div className="truncate opacity-80">{m.reply_to.text}</div>
                   </div>
                 )}
                 {m.file_type === 'image' && <img src={m.file_url} className="max-w-full rounded-xl mb-1 max-h-64 object-cover" />}
                 {!m.file_type && <div className="text-[15px] leading-snug break-words px-1 pb-1">{formatText(m.text)}</div>}
-                <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-blue-100' : 'text-gray-500'}`}>{m.is_pinned && '📌'}{m.is_edited && 'изм.'} {time} {isMe && <span>✓✓</span>}</div>
+                <div className={`flex items-center justify-end gap-1 text-[11px] select-none px-1 ${isMe ? 'text-white/70' : 'text-gray-500'}`}>{m.is_pinned && '📌'}{m.is_edited && 'изм.'} {time} {isMe && <span>✓✓</span>}</div>
               </div>
             </div>
           );
@@ -186,16 +205,16 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4"></div>
             <div className="grid grid-cols-4 gap-2 mb-4">
-              <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">↩️</span><span className="text-xs">Ответить</span></button>
-              <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">➡️</span><span className="text-xs">Переслать</span></button>
+              <button onClick={() => { setReplyTo(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">↩️</span><span className="text-xs text-black dark:text-white">Ответить</span></button>
+              <button onClick={() => { setForwardMsg(activeMenuMsg); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">➡️</span><span className="text-xs text-black dark:text-white">Переслать</span></button>
               {activeMenuMsg.sender_id === currentUser.id && !activeMenuMsg.gift && (
-                <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">✏️</span><span className="text-xs">Изменить</span></button>
+                <button onClick={() => { setEditMsg(activeMenuMsg); setInput(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">✏️</span><span className="text-xs text-black dark:text-white">Изменить</span></button>
               )}
-              <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📋</span><span className="text-xs">Копировать</span></button>
-              <button onClick={() => pinMessage(activeMenuMsg)} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📌</span><span className="text-xs">{activeMenuMsg.is_pinned ? 'Открепить' : 'Закрепить'}</span></button>
+              <button onClick={() => { navigator.clipboard.writeText(activeMenuMsg.text); setActiveMenuMsg(null); }} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📋</span><span className="text-xs text-black dark:text-white">Копировать</span></button>
+              <button onClick={() => pinMessage(activeMenuMsg)} className="flex flex-col items-center p-2 hover:bg-black/5 rounded-xl"><span className="text-2xl mb-1">📌</span><span className="text-xs text-black dark:text-white">{activeMenuMsg.is_pinned ? 'Открепить' : 'Закрепить'}</span></button>
               <button onClick={() => deleteMessage(activeMenuMsg.id)} className="flex flex-col items-center p-2 hover:bg-red-50 rounded-xl text-red-500"><span className="text-2xl mb-1">🗑</span><span className="text-xs">Удалить</span></button>
             </div>
-            <button onClick={() => setActiveMenuMsg(null)} className="w-full py-3 bg-gray-100 dark:bg-white/5 rounded-xl font-medium">Отмена</button>
+            <button onClick={() => setActiveMenuMsg(null)} className="w-full py-3 bg-gray-100 dark:bg-white/5 rounded-xl font-medium text-black dark:text-white">Отмена</button>
           </div>
         </div>
       )}
@@ -203,19 +222,19 @@ export default function ChatView({ chat, currentUser, onBack, allChats }: any) {
       <div className="p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         {replyTo && !editMsg && (
           <div className="flex items-center gap-2 bg-black/5 p-2 rounded-xl border-l-4 border-blue-500">
-            <div className="flex-1 min-w-0"><div className="text-xs font-bold text-blue-500">Ответ: {replyTo.profiles?.name}</div><div className="text-sm truncate">{replyTo.text}</div></div>
+            <div className="flex-1 min-w-0"><div className="text-xs font-bold text-blue-500">Ответ: {replyTo.profiles?.name}</div><div className="text-sm truncate text-black dark:text-white">{replyTo.text}</div></div>
             <button onClick={() => setReplyTo(null)} className="text-gray-500 px-2">✕</button>
           </div>
         )}
         {editMsg && (
           <div className="flex items-center gap-2 bg-black/5 p-2 rounded-xl border-l-4 border-green-500">
-            <div className="flex-1 min-w-0"><div className="text-xs font-bold text-green-500">Редактирование</div><div className="text-sm truncate">{editMsg.text}</div></div>
+            <div className="flex-1 min-w-0"><div className="text-xs font-bold text-green-500">Редактирование</div><div className="text-sm truncate text-black dark:text-white">{editMsg.text}</div></div>
             <button onClick={() => { setEditMsg(null); setInput(''); }} className="text-gray-500 px-2">✕</button>
           </div>
         )}
         <div className="flex items-end gap-2">
-          <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 text-yellow-600 shrink-0 text-xl">🎁</button>
-          <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] dark:text-white" />
+          <button onClick={() => setShowGifts(true)} className="p-3 rounded-full bg-black/5 dark:bg-white/10 text-yellow-600 dark:text-yellow-400 shrink-0 text-xl">🎁</button>
+          <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Сообщение..." rows={1} className="flex-1 bg-white/50 dark:bg-black/40 border border-white/30 dark:border-white/10 rounded-2xl px-4 py-2.5 outline-none resize-none max-h-32 text-[16px] text-black dark:text-white" />
           <button onClick={sendMessage} className={`p-3 rounded-full text-white shrink-0 transition shadow-lg ${editMsg ? 'bg-green-500' : 'bg-blue-500'}`}>{editMsg ? '✓' : '➤'}</button>
         </div>
       </div>
