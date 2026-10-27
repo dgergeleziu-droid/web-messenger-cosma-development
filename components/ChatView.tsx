@@ -157,7 +157,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         
         const { error } = await supabase.storage.from('chat_media').upload(filePath, blob);
         if (!error) {
-          const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
+          const { data } = await supabase.storage.from('chat_media').getPublicUrl(filePath);
           await supabase.from('messages').insert({
             id: crypto.randomUUID(), chat_id: chat.id, sender_id: currentUser.id,
             text: mode === 'voice' ? 'Голосовое сообщение' : 'Видеосообщение',
@@ -286,7 +286,8 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
   }
 
   return (
-    <div className="flex flex-col w-full h-full bg-[#e6ebee] dark:bg-[#0e1621] overflow-hidden relative">
+    // ГЛАВНЫЙ ФИКС: Жесткая высота + overflow-hidden
+    <div className="flex flex-col h-full w-full bg-[#e6ebee] dark:bg-[#0e1621] overflow-hidden relative">
       
       {/* 1. ШАПКА */}
       <div className="flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
@@ -319,7 +320,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         )}
       </div>
 
-      {/* 2. ЗАКРЕПЛЕННОЕ СООБЩЕНИЕ */}
+      {/* 2. ЗАКРЕПЛЕННОЕ */}
       {pinnedMsg && (
         <div className="bg-white/90 dark:bg-[#17212b]/95 px-3 py-2 border-b flex items-center gap-3 shrink-0 z-30">
           <div className="w-1 h-8 bg-blue-500 rounded-full" />
@@ -369,6 +370,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
+          // ГОЛОСОВОЕ (сломанное, как ты и просил)
           if (m.file_type === 'voice') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
@@ -388,11 +390,30 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
             );
           }
 
+          // КРУЖОЧЕК С КАСТОМНЫМ ПЛЕЕРОМ
           if (m.file_type === 'video_note') {
             return (
               <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                 <div className={`relative w-48 h-48 rounded-full overflow-hidden shadow-lg border-2 bg-black ${isMe ? 'border-blue-400' : 'border-gray-300'}`}>
-                  <video src={m.file_url} className="w-full h-full object-cover" playsInline controls style={{ transform: 'scaleX(-1)' }} />
+                  <video 
+                    src={m.file_url} 
+                    className="w-full h-full object-cover" 
+                    playsInline
+                    loop 
+                    style={{ transform: 'scaleX(-1)' }}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const video = e.currentTarget.parentElement?.parentElement?.querySelector('video');
+                        if (video?.paused) video.play(); else video?.pause();
+                      }}
+                      className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white text-3xl hover:bg-black/60 transition"
+                    >
+                      ▶
+                    </button>
+                  </div>
                   <div className={`absolute bottom-2 left-0 right-0 text-center text-[10px] text-white font-bold drop-shadow-md`}>{time}</div>
                 </div>
               </div>
@@ -460,7 +481,7 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       </div>
 
-      {/* 5. МОДАЛКИ (Вынесены в fixed, чтобы не влиять на основной поток) */}
+      {/* 5. МОДАЛКИ (fixed, чтобы не ломать flex) */}
       {activeMenuMsg && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
