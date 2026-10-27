@@ -51,9 +51,11 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         if (participants) {
           const other = participants.find((p: any) => p.user_id !== currentUser.id);
           if (other) {
-            setOtherUser(other.profiles);
-            if (other.profiles.worn_gift_id) {
-              const { data: giftData } = await supabase.from('user_gifts').select('*, gift_catalog(emoji)').eq('id', other.profiles.worn_gift_id).single();
+            // ИСПРАВЛЕНИЕ ОШИБКИ TS2339 (приводим к any)
+            const profile = other.profiles as any;
+            setOtherUser(profile);
+            if (profile?.worn_gift_id) {
+              const { data: giftData } = await supabase.from('user_gifts').select('*, gift_catalog(emoji)').eq('id', profile.worn_gift_id).single();
               if (giftData) setOtherWornGift(giftData);
             }
           }
@@ -287,7 +289,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
   return (
     <div className="flex flex-col w-full h-full bg-[#e6ebee] dark:bg-[#0e1621] overflow-hidden relative">
       
-      {/* ШАПКА */}
       <div className="flex items-center gap-3 p-3 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shrink-0 z-40">
         {selectedMsgs.length > 0 ? (
           <div className="flex-1 flex justify-between items-center px-2">
@@ -318,7 +319,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         )}
       </div>
 
-      {/* ЗАКРЕПЛЕННОЕ */}
       {pinnedMsg && (
         <div className="bg-white/90 dark:bg-[#17212b]/95 px-3 py-2 border-b flex items-center gap-3 shrink-0 z-30">
           <div className="w-1 h-8 bg-blue-500 rounded-full" />
@@ -327,7 +327,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       )}
 
-      {/* ЛЕНТА СООБЩЕНИЙ */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center text-gray-500">Нет сообщений. Напишите первое!</div>
@@ -440,7 +439,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         <div ref={endRef} />
       </div>
 
-      {/* ПАНЕЛЬ ВВОДА */}
       <div className="p-2 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border-t border-white/20 flex flex-col gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         {replyTo && !editMsg && (
           <div className="flex items-center gap-2 bg-black/5 p-2 rounded-xl border-l-4 border-blue-500">
@@ -471,7 +469,6 @@ export default function ChatView({ chat, currentUser, onBack, allChats, onUpdate
         </div>
       </div>
 
-      {/* МОДАЛКИ */}
       {activeMenuMsg && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuMsg(null)}>
           <div className="bg-white dark:bg-[#17212b] w-full max-w-md rounded-t-3xl p-4 shadow-2xl pop" onClick={e => e.stopPropagation()}>
