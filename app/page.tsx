@@ -17,14 +17,13 @@ export default function Home() {
   const [chats, setChats] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   
-  // Состояния для модальных окон
   const [showProfile, setShowProfile] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCreateChat, setShowCreateChat] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
-  const [showPrivacy, setShowPrivacy] = useState(false); // <--- Стейт для конфиденциальности
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   const [notification, setNotification] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -48,7 +47,7 @@ export default function Home() {
   const fetchChats = async () => {
     if (!currentUser) return;
     const { data, error } = await supabase.from('chat_participants')
-      .select(`chat_id, chats(*, chat_participants(user_id, profiles(name, avatar_url, avatar_color, status_emoji)))`)
+      .select(`chat_id, chats(*, chat_participants(user_id, profiles(name, avatar_url, avatar_color, status_emoji, is_premium)))`)
       .eq('user_id', currentUser.id);
 
     if (error) return;
@@ -73,6 +72,7 @@ export default function Home() {
             chat.avatar_url = otherParticipant.profiles.avatar_url;
             chat.avatar_color = otherParticipant.profiles.avatar_color;
             chat.status_emoji = otherParticipant.profiles.status_emoji;
+            chat.is_premium = otherParticipant.profiles.is_premium;
           }
         }
         return chat;
@@ -149,7 +149,7 @@ export default function Home() {
 
         <div className={`flex-1 h-full rounded-none md:rounded-2xl overflow-hidden border border-white/20 dark:border-white/10 shadow-2xl backdrop-blur-2xl bg-white/40 dark:bg-black/20 ${activeChat ? "block" : "hidden md:flex md:items-center md:justify-center"}`}>
           {activeChat ? (
-            <ChatView chat={activeChat} currentUser={currentUser} onBack={() => setActiveChat(null)} allChats={chats} />
+            <ChatView chat={activeChat} currentUser={currentUser} onBack={() => setActiveChat(null)} allChats={chats} onUpdateUser={fetchUser} />
           ) : (
             <div className="text-center text-gray-700 dark:text-gray-300">
               <h2 className="text-4xl font-bold mb-2 tracking-tight">Cosma</h2>
@@ -159,36 +159,12 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ПЕРЕДАЕМ onOpenPrivacy В ПРОФИЛЬ И НАСТРОЙКИ */}
-      {showProfile && (
-        <Profile 
-          user={currentUser} 
-          onClose={() => setShowProfile(false)} 
-          onOpenNewChat={() => setShowNewChat(true)} 
-          onOpenSettings={() => setShowSettings(true)} 
-          onOpenCreateChat={() => setShowCreateChat(true)} 
-          onOpenAdmin={() => setShowAdmin(true)} 
-          onOpenTheme={() => setShowTheme(true)} 
-          onOpenPrivacy={() => setShowPrivacy(true)} // <--- Передали в профиль
-        />
-      )}
-      
+      {showProfile && <Profile user={currentUser} onClose={() => setShowProfile(false)} onOpenNewChat={() => setShowNewChat(true)} onOpenSettings={() => setShowSettings(true)} onOpenCreateChat={() => setShowCreateChat(true)} onOpenAdmin={() => setShowAdmin(true)} onOpenTheme={() => setShowTheme(true)} onOpenPrivacy={() => setShowPrivacy(true)} />}
       {showNewChat && <NewChatModal currentUser={currentUser} onClose={() => setShowNewChat(false)} onSelectUser={handleSelectUser} />}
-      
-      {showSettings && (
-        <SettingsModal 
-          currentUser={currentUser} 
-          onClose={() => setShowSettings(false)} 
-          onUpdate={fetchUser} 
-          onOpenPrivacy={() => setShowPrivacy(true)} // <--- Передали в настройки
-        />
-      )}
-      
+      {showSettings && <SettingsModal currentUser={currentUser} onClose={() => setShowSettings(false)} onUpdate={fetchUser} onOpenPrivacy={() => setShowPrivacy(true)} />}
       {showCreateChat && <CreateChatModal currentUser={currentUser} onClose={() => setShowCreateChat(false)} onCreated={() => { fetchChats(); setShowCreateChat(false); }} />}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       {showTheme && <ThemeSettings onClose={() => setShowTheme(false)} />}
-      
-      {/* ОКНО КОНФИДЕНЦИАЛЬНОСТИ */}
       {showPrivacy && <PrivacySettings onClose={() => setShowPrivacy(false)} />}
     </main>
   );
